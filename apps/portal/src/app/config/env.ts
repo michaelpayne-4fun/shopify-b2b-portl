@@ -9,7 +9,7 @@ const readBool = (key: string, fallback: boolean): boolean => {
 };
 
 export const appConfig = {
-  bffUrl: readEnv('VITE_BFF_URL', 'http://localhost:8787'),
+  bffUrl: readEnv('VITE_BFF_URL', '/api'),
   defaultLocale: readEnv('VITE_DEFAULT_LOCALE', 'en-US'),
   defaultCurrency: readEnv('VITE_DEFAULT_CURRENCY', 'USD'),
   features: {

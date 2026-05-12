@@ -1,0 +1,45 @@
+# Rename `app` to a globally unique name before `fly launch`.
+app = "shopify-b2b-portal"
+primary_region = "ord"
+
+[build]
+  dockerfile = "apps/server/Dockerfile"
+
+[env]
+  PORT = "8080"
+  SHOPIFY_STOREFRONT_API_VERSION = "2024-10"
+  SHOPIFY_ADMIN_API_VERSION = "2024-10"
+  FEATURE_QUOTES = "true"
+  FEATURE_APPROVALS = "false"
+  FEATURE_SHOPPING_LISTS = "true"
+  FEATURE_INVOICES = "false"
+  FEATURE_MULTI_TIER_HIERARCHY = "false"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "get"
+  path = "/healthz"
+
+[deploy]
+  # Migrations apply atomically before any new machine accepts traffic.
+  # If this command fails the release aborts and the previous machine
+  # keeps serving traffic.
+  release_command = "yarn workspace @b2b/db drizzle:migrate"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

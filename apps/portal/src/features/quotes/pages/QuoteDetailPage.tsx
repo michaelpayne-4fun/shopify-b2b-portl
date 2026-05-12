@@ -31,7 +31,11 @@ export const QuoteDetailPage = () => {
   });
   const convert = useMutation({
     mutationFn: () => convertQuoteToCart(id!),
-    onSuccess: () => navigate('/cart'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.cart });
+      qc.invalidateQueries({ queryKey: queryKeys.quotes.detail(id!) });
+      navigate('/cart');
+    },
   });
 
   if (q.isLoading) return <LoadingState />;

@@ -8,11 +8,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "yarn workspaces foreach -pi run dev",
-    "build": "yarn workspaces foreach -pt run build",
-    "typecheck": "yarn workspaces foreach -p run typecheck",
-    "lint": "yarn workspaces foreach -p run lint",
-    "test": "yarn workspaces foreach -p run test",
+    "dev": "concurrently -k -n server,portal -c blue,magenta \"yarn workspace @b2b/server dev\" \"yarn workspace @b2b/portal dev\"",
+    "build": "yarn workspace @b2b/portal build && yarn workspace @b2b/server build",
+    "typecheck": "yarn workspaces run typecheck",
+    "lint": "yarn workspaces run lint",
+    "test": "yarn workspaces run test",
     "db:generate": "yarn workspace @b2b/db drizzle:generate",
     "db:migrate": "yarn workspace @b2b/db drizzle:migrate"
   },
@@ -21,6 +21,7 @@
   },
   "packageManager": "yarn@1.22.22",
   "devDependencies": {
+    "concurrently": "^9.0.1",
     "typescript": "^5.6.2"
   }
 }

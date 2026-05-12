@@ -4,7 +4,7 @@ import { ErrorState } from '@/ui/components/ErrorState';
 interface State { error: Error | null }
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
-  state: State = { error: null };
+  override state: State = { error: null };
   static getDerivedStateFromError(error: Error): State { return { error }; }
   override componentDidCatch(error: Error): void {
     // eslint-disable-next-line no-console

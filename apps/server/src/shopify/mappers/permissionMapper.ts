@@ -1,5 +1,7 @@
 import type { Permission } from '@b2b/domain';
-import { isPermission } from '@b2b/domain';
+import { PORTAL_ONLY_PERMISSIONS, isPermission } from '@b2b/domain';
+
+const PORTAL_ONLY = new Set<Permission>(PORTAL_ONLY_PERMISSIONS);
 
 /**
  * Shopify B2B emits coarse role names (Location admin / Ordering only /
@@ -43,8 +45,10 @@ export const mapShopifyRoleToPermissions = (
 ): Permission[] => {
   const fromRole = ROLE_TO_PERMISSIONS[roleName] ?? [];
   const fromExplicit = explicitPermissions.filter(isPermission);
-  const merged = new Set<Permission>([...fromRole, ...fromExplicit]);
-  return [...merged];
+  // Defence-in-depth: drop any portal-only permission that somehow
+  // arrives via Shopify role data. Portal-only grants must come from
+  // the portal DB (role_assignments) and nowhere else.
+  return [...new Set<Permission>([...fromRole, ...fromExplicit])].filter((p) => !PORTAL_ONLY.has(p));
 };
 
 export const isShopifyLocationAdmin = (roleName: string): boolean => roleName === 'Location admin';

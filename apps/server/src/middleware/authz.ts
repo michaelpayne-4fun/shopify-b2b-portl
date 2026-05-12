@@ -17,7 +17,7 @@ export const requirePermission =
 
 export const requireFeatureFlag =
   (flag: keyof ReturnType<typeof features>): MiddlewareHandler<{ Variables: AppVariables }> =>
-  async (c, next) => {
+  async (_c, next) => {
     if (!features()[flag]) throw new FeatureDisabledError(flag);
     await next();
   };

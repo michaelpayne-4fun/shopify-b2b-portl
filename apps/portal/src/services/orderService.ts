@@ -17,5 +17,10 @@ export const listOrders = (filter: OrderListFilter = {}) => {
 
 export const getOrder = (id: string) => bff.get<Order>(`/orders/${encodeURIComponent(id)}`);
 
+export interface ReorderResult {
+  cartId: string;
+  skippedLines: Array<{ sku: string; reason: string }>;
+}
+
 export const reorder = (id: string) =>
-  bff.post<{ cartId: string }>(`/orders/${encodeURIComponent(id)}/reorder`);
+  bff.post<ReorderResult>(`/orders/${encodeURIComponent(id)}/reorder`);

@@ -210,3 +210,43 @@ export const deleteQuote = async (db: Database, companyId: string, id: string): 
   await db.delete(quoteLines).where(eq(quoteLines.quoteId, id));
   await db.delete(quotes).where(eq(quotes.id, id));
 };
+
+/**
+ * Lifts a quote's lines into a cart-create payload. Lines without a
+ * resolved variantId (defensive guard — buildLines populates it for
+ * every line at draft time) get skipped and reported back to the SPA.
+ */
+export const getCartLinesForQuote = async (
+  db: Database,
+  companyId: string,
+  id: string,
+): Promise<{
+  quote: Quote;
+  lines: { merchandiseId: string; quantity: number }[];
+  skippedLines: { sku: string; reason: string }[];
+}> => {
+  const quote = await getQuote(db, companyId, id);
+  if (quote.status !== 'approved') {
+    throw new ValidationError('Only approved quotes can be converted to a cart');
+  }
+  const lines: { merchandiseId: string; quantity: number }[] = [];
+  const skippedLines: { sku: string; reason: string }[] = [];
+  for (const ln of quote.lines) {
+    if (!ln.variantId) {
+      skippedLines.push({ sku: ln.sku, reason: 'variant_unknown' });
+      continue;
+    }
+    lines.push({ merchandiseId: ln.variantId, quantity: ln.quantity });
+  }
+  return { quote, lines, skippedLines };
+};
+
+export const markQuoteOrdered = async (
+  db: Database,
+  args: { companyId: string; id: string },
+): Promise<Quote> => {
+  const existing = await getQuote(db, args.companyId, args.id);
+  const next = advanceQuote(existing, 'convertToCart', { approvalsEnabled: features().approvals });
+  await db.update(quotes).set({ status: next, updatedAt: new Date() }).where(eq(quotes.id, args.id));
+  return getQuote(db, args.companyId, args.id);
+};

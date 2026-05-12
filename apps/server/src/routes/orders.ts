@@ -6,6 +6,7 @@ import { customerAccountQuery } from '../shopify/customerAccountClient';
 import { adminQuery } from '../shopify/adminClient';
 import { mapShopifyOrder, type ShopifyOrderNode } from '../shopify/mappers/orderMapper';
 import type { AppVariables } from '../middleware/types';
+import { createCartFromLines } from '../portal/cart/cartCreate';
 
 export const orderRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -112,8 +113,50 @@ orderRoutes.get('/orders/:id', async (c) => {
 });
 
 orderRoutes.post('/orders/:id/reorder', async (c) => {
-  // Compose: read order lines via Admin; create a new Storefront cart
-  // with those lines via cart routes. v1 returns a placeholder cartId
-  // wired through cart create; full implementation in apps/server/src/portal/cart.
-  throw new NotFoundError('reorder', 'not-implemented-in-v1');
+  const id = c.req.param('id');
+  const auth = c.var.auth!;
+
+  // Reuse the same lookup used by GET /orders/:id (CAA preferred, Admin fallback).
+  let node: ShopifyOrderNode | null = null;
+  try {
+    const d = await customerAccountQuery<{ customer: { order: ShopifyOrderNode | null } }>(
+      auth.caaAccessToken,
+      `query OneOrder($id: ID!) { customer { order(id: $id) { ${ORDER_FIELDS} } } }`,
+      { id },
+    );
+    node = d.customer.order;
+  } catch {
+    // fall through to admin
+  }
+  if (!node) {
+    const d = await adminQuery<{ order: ShopifyOrderNode | null }>(
+      `query OneOrder($id: ID!) { order(id: $id) { ${ORDER_FIELDS} } }`,
+      { id },
+    );
+    node = d.order;
+  }
+  if (!node) throw new NotFoundError('Order', id);
+
+  const order = mapShopifyOrder(node);
+  const lines: { merchandiseId: string; quantity: number }[] = [];
+  const skippedLines: { sku: string; reason: string }[] = [];
+  for (const line of order.lines) {
+    if (!line.variantId) {
+      skippedLines.push({ sku: line.sku, reason: 'variant_unknown' });
+      continue;
+    }
+    lines.push({ merchandiseId: line.variantId, quantity: line.quantity });
+  }
+  if (lines.length === 0) {
+    throw new NotFoundError('reorder', 'no_reorderable_lines');
+  }
+
+  const cartId = await createCartFromLines({
+    db: c.var.db,
+    sessionId: auth.sessionId,
+    buyerAccessToken: auth.caaAccessToken,
+    companyLocationGid: auth.location?.shopifyLocationGid,
+    lines,
+  });
+  return c.json({ cartId, skippedLines });
 });

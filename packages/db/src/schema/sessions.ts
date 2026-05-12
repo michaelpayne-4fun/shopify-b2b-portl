@@ -13,6 +13,7 @@ export const sessions = pgTable('sessions', {
   caaAccessToken: text('caa_access_token').notNull(),
   caaRefreshToken: text('caa_refresh_token'),
   caaExpiresAt: integer('caa_expires_at').notNull(),
+  shopifyCartGid: text('shopify_cart_gid'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });

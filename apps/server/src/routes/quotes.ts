@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { ValidationError } from '@b2b/domain';
 import { requireFeatureFlag, requirePermission } from '../middleware/authz';
 import type { AppVariables } from '../middleware/types';
 import {
-  createQuoteDraft, deleteQuote, getQuote, listQuotes, submitQuote, updateQuoteDraft,
+  createQuoteDraft, deleteQuote, getCartLinesForQuote, getQuote, listQuotes,
+  markQuoteOrdered, submitQuote, updateQuoteDraft,
 } from '../portal/quotes/quoteService';
+import { createCartFromLines } from '../portal/cart/cartCreate';
 
 export const quoteRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -81,12 +82,22 @@ quoteRoutes.post('/quotes/:id/submit', requirePermission('quotes.submit'), async
 });
 
 quoteRoutes.post('/quotes/:id/convert-to-cart', requirePermission('checkout.begin'), async (c) => {
-  const quote = await getQuote(c.var.db, c.var.auth!.company.id, c.req.param('id'));
-  if (quote.status !== 'approved') {
-    throw new ValidationError('Only approved quotes can be converted to a cart');
-  }
-  // For v1, return a placeholder; full draft-order mirror lives in
-  // portal/quotes/draftOrderMirror.ts (to be implemented when
-  // quote_mirror_to_draft_order setting is true).
-  return c.json({ cartId: 'pending-cart-id' });
+  const auth = c.var.auth!;
+  // TODO: when company_settings.quote_mirror_to_draft_order is true
+  // AND quote.shopifyDraftOrderGid is set, complete the draft order
+  // into a real order rather than going through cartCreate. v2 path.
+  const { lines, skippedLines } = await getCartLinesForQuote(
+    c.var.db,
+    auth.company.id,
+    c.req.param('id'),
+  );
+  const cartId = await createCartFromLines({
+    db: c.var.db,
+    sessionId: auth.sessionId,
+    buyerAccessToken: auth.caaAccessToken,
+    companyLocationGid: auth.location?.shopifyLocationGid,
+    lines,
+  });
+  await markQuoteOrdered(c.var.db, { companyId: auth.company.id, id: c.req.param('id') });
+  return c.json({ cartId, skippedLines });
 });
