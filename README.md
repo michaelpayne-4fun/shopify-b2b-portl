@@ -8,6 +8,12 @@ this app's BFF + Postgres database. Features Shopify does supply
 (companies, locations, catalog, cart, checkout, orders) are sourced
 through the Storefront / Customer Account / Admin APIs.
 
+Deployment model: **Shopify custom app** (one merchant, one
+deployment). It is not distributed via the Shopify App Store and is
+not installed per-merchant via OAuth. See `docs/CUSTOM_APP.md` for the
+explicit contrast with the public-app pattern and the DO/DON'T list
+for future contributors.
+
 ## Monorepo
 
 ```
@@ -40,6 +46,7 @@ PKCE handshake, and bootstraps the company + permission grants.
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — layered design, trust boundaries, data flow
+- `docs/CUSTOM_APP.md` — custom-vs-public-app posture, credential provisioning, drift guardrails
 - `docs/AUTH.md` — CAA OAuth/PKCE flow, session model
 - `docs/BFF.md` — REST surface consumed by the SPA
 - `docs/SHOPIFY.md` — required Shopify app config and API scopes

@@ -1,5 +1,19 @@
 # Architecture
 
+## Deployment model: custom app, single tenant
+
+This portal is a Shopify **custom app**. One deployment serves one
+Shopify Plus B2B store. Storefront, Admin, and Customer Account API
+credentials are static env vars provisioned by the merchant's admin
+(Apps → Develop apps for the Admin/Storefront tokens; Settings →
+Customer accounts → Headless storefronts for the CAA app).
+
+It is **not** a public Shopify App Store app — no OAuth install flow,
+no per-shop access-token storage, no Shopify Billing API, no App
+Bridge, no mandatory privacy webhooks. See `docs/CUSTOM_APP.md` for
+the full posture, the explicit contrast with the public-app pattern,
+and the DO/DON'T list for future contributors.
+
 ## Layering
 
 ```
