@@ -1,0 +1,26 @@
+{
+  "name": "shopify-b2b-portal",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shopify-native B2B Buyer Portal. SPA + BFF + portal DB.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "yarn workspaces foreach -pi run dev",
+    "build": "yarn workspaces foreach -pt run build",
+    "typecheck": "yarn workspaces foreach -p run typecheck",
+    "lint": "yarn workspaces foreach -p run lint",
+    "test": "yarn workspaces foreach -p run test",
+    "db:generate": "yarn workspace @b2b/db drizzle:generate",
+    "db:migrate": "yarn workspace @b2b/db drizzle:migrate"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@1.22.22",
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}
