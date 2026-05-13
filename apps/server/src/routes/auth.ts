@@ -30,29 +30,44 @@ authRoutes.post('/login', async (c) => {
 
 const callbackSchema = z.object({ code: z.string().min(1), state: z.string().min(1) });
 
+const tagStage = async <T>(stage: string, fn: () => Promise<T>): Promise<T> => {
+  try {
+    return await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error(`[auth.callback] stage=${stage} failed:`, message);
+    throw new Error(`stage=${stage}: ${message}`);
+  }
+};
+
 authRoutes.post('/callback', zValidator('json', callbackSchema), async (c) => {
   const { code, state } = c.req.valid('json');
   const db = c.var.db;
 
-  const stored = await db.select().from(oauthStates).where(eq(oauthStates.state, state)).limit(1);
-  if (!stored[0]) throw new ValidationError('Unknown OAuth state');
-  await db.delete(oauthStates).where(eq(oauthStates.state, state));
+  const stored = await tagStage('lookup_state', async () => {
+    const rows = await db.select().from(oauthStates).where(eq(oauthStates.state, state)).limit(1);
+    if (!rows[0]) throw new ValidationError('Unknown OAuth state');
+    await db.delete(oauthStates).where(eq(oauthStates.state, state));
+    return rows[0];
+  });
 
-  const tokens = await exchangeCode(code, stored[0].codeVerifier);
+  const tokens = await tagStage('token_exchange', () => exchangeCode(code, stored.codeVerifier));
 
-  // Resolve customer + company so we can persist them on the session.
-  const me = await customerAccountQuery<{ customer: { id: string } }>(
-    tokens.access_token,
-    CUSTOMER_ME_QUERY,
+  const me = await tagStage('customer_me', () =>
+    customerAccountQuery<{ customer: { id: string } }>(tokens.access_token, CUSTOMER_ME_QUERY),
   );
-  const companyData = await customerAccountQuery<{
-    customer: {
-      companyContactProfiles: Array<{
-        company: { id: string };
-        roleAssignments: { edges: Array<{ node: { role: { name: string }; companyLocation: { id: string } } }> };
-      }>;
-    };
-  }>(tokens.access_token, COMPANY_FOR_CUSTOMER_QUERY, { customerId: me.customer.id });
+
+  const companyData = await tagStage('company_lookup', () =>
+    customerAccountQuery<{
+      customer: {
+        companyContactProfiles: Array<{
+          company: { id: string };
+          roleAssignments: { edges: Array<{ node: { role: { name: string }; companyLocation: { id: string } } }> };
+        }>;
+      };
+    }>(tokens.access_token, COMPANY_FOR_CUSTOMER_QUERY, { customerId: me.customer.id }),
+  );
 
   const profile = companyData.customer.companyContactProfiles[0];
   if (!profile) throw new ValidationError('Buyer is not associated with any Shopify B2B company');
@@ -61,25 +76,29 @@ authRoutes.post('/callback', zValidator('json', callbackSchema), async (c) => {
   const firstRoleAssignment = profile.roleAssignments.edges[0]?.node;
   const isLocationAdmin = isShopifyLocationAdmin(firstRoleAssignment?.role.name ?? '');
 
-  await bootstrapPortalAdminIfFirst(db, {
-    companyId,
-    buyerId: me.customer.id,
-    isShopifyLocationAdmin: isLocationAdmin,
-  });
-  await ensureCompanySettings(db, companyId);
+  await tagStage('bootstrap_admin', () =>
+    bootstrapPortalAdminIfFirst(db, {
+      companyId,
+      buyerId: me.customer.id,
+      isShopifyLocationAdmin: isLocationAdmin,
+    }),
+  );
+  await tagStage('ensure_company_settings', () => ensureCompanySettings(db, companyId));
 
   const sessionId = randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_TTL * 1000);
-  await db.insert(sessions).values({
-    id: sessionId,
-    shopifyCustomerId: me.customer.id,
-    shopifyCompanyGid: companyId,
-    activeLocationGid: firstRoleAssignment?.companyLocation.id ?? null,
-    caaAccessToken: tokens.access_token,
-    caaRefreshToken: tokens.refresh_token ?? null,
-    caaExpiresAt: Math.floor(Date.now() / 1000) + tokens.expires_in,
-    expiresAt,
-  });
+  await tagStage('session_persist', () =>
+    db.insert(sessions).values({
+      id: sessionId,
+      shopifyCustomerId: me.customer.id,
+      shopifyCompanyGid: companyId,
+      activeLocationGid: firstRoleAssignment?.companyLocation.id ?? null,
+      caaAccessToken: tokens.access_token,
+      caaRefreshToken: tokens.refresh_token ?? null,
+      caaExpiresAt: Math.floor(Date.now() / 1000) + tokens.expires_in,
+      expiresAt,
+    }),
+  );
 
   const cookie = await issueSessionCookie(sessionId);
   c.header('Set-Cookie', cookie);

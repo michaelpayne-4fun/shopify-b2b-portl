@@ -18,10 +18,19 @@ const request = async <T>(method: string, path: string, body?: Body): Promise<T>
   });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  const data = text ? (JSON.parse(text) as unknown) : undefined;
+  const contentType = res.headers.get('content-type') ?? '';
+  let data: unknown;
+  if (text && contentType.includes('application/json')) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = undefined;
+    }
+  }
   if (!res.ok) {
     const err = (data as { error?: string; message?: string }) ?? {};
-    throw new BffError(err.message ?? res.statusText, res.status, err.error);
+    const fallback = text ? text.slice(0, 300) : res.statusText;
+    throw new BffError(err.message ?? fallback, res.status, err.error);
   }
   return data as T;
 };

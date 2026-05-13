@@ -10,6 +10,7 @@ export const errorHandler: MiddlewareHandler = async (c, next) => {
     }
     // eslint-disable-next-line no-console
     console.error('Unhandled error', err);
-    return c.json({ error: 'INTERNAL', message: 'Unexpected server error' }, 500);
+    const message = err instanceof Error ? err.message : 'Unexpected server error';
+    return c.json({ error: 'INTERNAL', message }, 500);
   }
 };

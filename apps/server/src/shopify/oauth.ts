@@ -84,16 +84,32 @@ export const exchangeCode = async (code: string, codeVerifier: string): Promise<
   if (env().SHOPIFY_CAA_CLIENT_SECRET) {
     body.set('client_secret', env().SHOPIFY_CAA_CLIENT_SECRET!);
   }
-  const res = await fetch(tokenUrl(), {
+  const url = tokenUrl();
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     body,
   });
+  const contentType = res.headers.get('content-type') ?? '';
+  const raw = await res.text();
+  // eslint-disable-next-line no-console
+  console.log('[oauth.exchangeCode]', {
+    url,
+    status: res.status,
+    contentType,
+    bodyPreview: raw.slice(0, 500),
+    clientId: env().SHOPIFY_CAA_CLIENT_ID,
+    redirectUri: REDIRECT_URI,
+    scope: DEFAULT_SCOPES.join(' '),
+  });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Token exchange failed: ${res.status} ${text}`);
+    throw new Error(`token_exchange ${res.status} ${contentType} ${raw.slice(0, 300)}`);
   }
-  return (await res.json()) as TokenResponse;
+  try {
+    return JSON.parse(raw) as TokenResponse;
+  } catch {
+    throw new Error(`token_exchange non-JSON 200 ${contentType} ${raw.slice(0, 300)}`);
+  }
 };
 
 export const refreshAccessToken = async (refreshToken: string): Promise<TokenResponse> => {
