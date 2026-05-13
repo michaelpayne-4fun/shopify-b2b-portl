@@ -35,3 +35,23 @@ Only used when `VITE_COMMERCE_PLATFORM=bigcommerce`. These live in
 | `VITE_BC_STORE_HASH` | Store hash for Storefront API calls. |
 | `VITE_BC_CHANNEL_ID` | Storefront channel id. |
 | `VITE_BC_STOREFRONT_URL` | Public storefront origin (used for checkout hand-off). |
+
+## Shopify server (`apps/server`)
+
+Server-side only — never exposed to the browser. Read by `apps/server/src/env.ts`
+via Zod and validated at startup.
+
+| Variable | Purpose |
+| --- | --- |
+| `SHOPIFY_SHOP_DOMAIN` | Store domain (e.g. `your-store.myshopify.com`). |
+| `SHOPIFY_CLIENT_ID` | OAuth app client ID from the Shopify Dev Dashboard. Used to obtain Admin API tokens via the client credentials grant. |
+| `SHOPIFY_CLIENT_SECRET` | OAuth app client secret. Paired with `SHOPIFY_CLIENT_ID` — never commit this value. |
+| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | Static Storefront API token. Not affected by the Admin API credential change. |
+| `SHOPIFY_CAA_CLIENT_ID` | Customer Account API OAuth client ID. Separate flow — unrelated to Admin API auth. |
+| `SHOPIFY_CAA_CLIENT_SECRET` | Customer Account API OAuth client secret. |
+
+> **Note on Admin API auth (January 2026 change).** New Shopify apps no longer
+> receive a static `X-Shopify-Access-Token`. Tokens are obtained programmatically
+> via the OAuth 2.0 client credentials grant, expire after 24 h, and are cached
+> in memory by `apps/server/src/shopify/adminToken.ts`. See
+> `apps/server/.env.example` for a complete template.

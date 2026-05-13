@@ -129,3 +129,60 @@ fully usable portal. Contract tests pass for the mock adapter.
 
 **Acceptance criteria.** Documentation explains how to run the app, write a
 new adapter, and what changed from the upstream repo.
+
+---
+
+## Deployment runbook — Fly.io
+
+### §2 — Credentials reference
+
+#### §2.4 — Shopify credentials
+
+| Credential | Where to obtain | Fly secret name |
+| --- | --- | --- |
+| Store domain | Shopify Admin → Settings → Domains | `SHOPIFY_SHOP_DOMAIN` |
+| Client ID | Shopify Dev Dashboard → App → Client credentials | `SHOPIFY_CLIENT_ID` |
+| Client secret | Shopify Dev Dashboard → App → Client credentials | `SHOPIFY_CLIENT_SECRET` |
+| Storefront access token | Shopify Admin → Apps → Storefront API → Tokens | `SHOPIFY_STOREFRONT_ACCESS_TOKEN` |
+| CAA client ID | Shopify Dev Dashboard → Customer Account API | `SHOPIFY_CAA_CLIENT_ID` |
+| CAA client secret | Shopify Dev Dashboard → Customer Account API | `SHOPIFY_CAA_CLIENT_SECRET` |
+
+> **Admin API auth change (January 2026).** Static `X-Shopify-Access-Token`
+> values are no longer issued for new apps. Use `SHOPIFY_CLIENT_ID` and
+> `SHOPIFY_CLIENT_SECRET` instead. The server obtains short-lived tokens
+> automatically via the OAuth client credentials grant and caches them in memory.
+
+### §3 — Phase 3: deploy server to Fly.io
+
+#### §3.1 — Prerequisites
+
+```bash
+fly auth login
+fly apps create b2b-portal-server   # one-time
+```
+
+#### §4 — Secrets
+
+#### §4.4 — Set Shopify secrets
+
+```bash
+fly secrets set \
+  SHOPIFY_SHOP_DOMAIN="your-store.myshopify.com" \
+  SHOPIFY_CLIENT_ID="your_app_client_id" \
+  SHOPIFY_CLIENT_SECRET="your_app_client_secret" \
+  SHOPIFY_STOREFRONT_ACCESS_TOKEN="your_storefront_token" \
+  SHOPIFY_CAA_CLIENT_ID="your_caa_client_id" \
+  SHOPIFY_CAA_CLIENT_SECRET="your_caa_client_secret"
+```
+
+Verify secrets are registered (values are never echoed):
+
+```bash
+fly secrets list
+```
+
+#### §4.5 — Deploy
+
+```bash
+fly deploy --config fly.toml
+```
