@@ -100,7 +100,7 @@ export const deleteShoppingList = async (db: Database, id: string): Promise<void
 
 export const addItem = async (
   db: Database,
-  args: { listId: string; sku: string; quantity: number; name?: string },
+  args: { listId: string; sku: string; quantity: number; name?: string; variantId?: string },
 ): Promise<ShoppingList> => {
   await db.insert(shoppingListItems).values({
     id: randomUUID(),
@@ -108,11 +108,29 @@ export const addItem = async (
     sku: args.sku,
     name: args.name ?? args.sku,
     quantity: args.quantity,
-    variantId: null,
+    variantId: args.variantId ?? null,
     notes: null,
   });
   await db.update(shoppingLists).set({ updatedAt: new Date() }).where(eq(shoppingLists.id, args.listId));
   return getShoppingList(db, args.listId);
+};
+
+export const updateItem = async (
+  db: Database,
+  listId: string,
+  itemId: string,
+  patch: { quantity?: number; name?: string },
+): Promise<ShoppingList> => {
+  const updates: Record<string, unknown> = {};
+  if (patch.quantity !== undefined) updates.quantity = patch.quantity;
+  if (patch.name !== undefined) updates.name = patch.name;
+  if (Object.keys(updates).length > 0) {
+    await db.update(shoppingListItems)
+      .set(updates)
+      .where(and(eq(shoppingListItems.listId, listId), eq(shoppingListItems.id, itemId)));
+    await db.update(shoppingLists).set({ updatedAt: new Date() }).where(eq(shoppingLists.id, listId));
+  }
+  return getShoppingList(db, listId);
 };
 
 export const removeItem = async (
