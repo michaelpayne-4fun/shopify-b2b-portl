@@ -7,6 +7,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Money, Product, ProductVariant } from '@b2b/domain';
 import { getProductBySku, searchProducts } from '@/services/catalogService';
+import { friendlyError, friendlyErrorLine } from '@/services/errorMessages';
 import { queryKeys } from '@/state/queries/queryKeys';
 import { Money as MoneyView } from '@/ui/components/Money';
 
@@ -53,8 +54,13 @@ export const QuickOrderRow = ({
   const [quantity, setQuantity] = useState(initialQuantity ?? 1);
   const [product, setProduct] = useState<Product | null>(null);
   const [variant, setVariant] = useState<ProductVariant | null>(null);
-  const [error, setError] = useState<string | undefined>();
+  const [errorObj, setErrorObj] = useState<unknown>();
   const skuLookupAttemptedFor = useRef<string | null>(null);
+
+  const friendly = useMemo(
+    () => (errorObj ? friendlyError(errorObj, 'sku-lookup') : null),
+    [errorObj],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(input.trim()), 250);
@@ -74,13 +80,13 @@ export const QuickOrderRow = ({
       const v = p.variants[0] ?? null;
       setProduct(p);
       setVariant(v);
-      setError(undefined);
+      setErrorObj(undefined);
       if (v?.minOrderQty && quantity < v.minOrderQty) setQuantity(v.minOrderQty);
     },
     onError: (e) => {
       setProduct(null);
       setVariant(null);
-      setError(e instanceof Error ? e.message : 'Lookup failed');
+      setErrorObj(e);
     },
   });
 
@@ -106,11 +112,11 @@ export const QuickOrderRow = ({
       }
       return 'resolved';
     }
-    if (error) return 'not_found';
+    if (errorObj) return 'not_found';
     if (skuLookup.isPending || search.isFetching) return 'searching';
     if (!input.trim()) return 'empty';
     return 'searching';
-  }, [variant, error, skuLookup.isPending, search.isFetching, input]);
+  }, [variant, errorObj, skuLookup.isPending, search.isFetching, input]);
 
   // Emit snapshot whenever anything material changes.
   useEffect(() => {
@@ -124,9 +130,9 @@ export const QuickOrderRow = ({
       unitPrice: variant?.price,
       minOrderQty: variant?.minOrderQty,
       maxOrderQty: variant?.maxOrderQty,
-      errorMessage: error,
+      errorMessage: friendly?.text,
     });
-  }, [rowKey, status, variant, product, quantity, error, onSnapshot]);
+  }, [rowKey, status, variant, product, quantity, friendly, onSnapshot]);
 
   const handleSelect = (opt: VariantOption | string | null) => {
     if (opt == null) return;
@@ -136,14 +142,14 @@ export const QuickOrderRow = ({
     }
     setProduct(opt.product);
     setVariant(opt.variant);
-    setError(undefined);
+    setErrorObj(undefined);
     setQuantity((q) => Math.max(q, opt.variant.minOrderQty ?? 1));
   };
 
   const reset = () => {
     setProduct(null);
     setVariant(null);
-    setError(undefined);
+    setErrorObj(undefined);
     skuLookupAttemptedFor.current = null;
   };
 
@@ -263,11 +269,30 @@ export const QuickOrderRow = ({
         ) : status === 'searching' ? (
           <Chip size="small" label="Searching" />
         ) : status === 'not_found' ? (
-          <Chip size="small" color="error" label="Not found" title={error} />
+          <Chip
+            size="small"
+            color="error"
+            label={friendly?.chipLabel ?? 'Not found'}
+            title={errorObj ? friendlyErrorLine(errorObj, 'sku-lookup') : undefined}
+          />
         ) : status === 'oos' ? (
-          <Chip size="small" color="warning" label="Out of stock" />
+          <Chip
+            size="small"
+            color="warning"
+            label="Out of stock"
+            title="This variant is currently out of stock and isn't set to backorder."
+          />
         ) : qtyInvalid ? (
-          <Chip size="small" color="warning" label="Check qty" />
+          <Chip
+            size="small"
+            color="warning"
+            label="Check qty"
+            title={
+              maxQty !== undefined && quantity > maxQty
+                ? `Maximum order quantity is ${maxQty}.`
+                : `Minimum order quantity is ${minQty}.`
+            }
+          />
         ) : (
           <Chip size="small" variant="outlined" label="Empty" />
         )}

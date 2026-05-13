@@ -9,10 +9,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { BulkAddCartItem, Money } from '@b2b/domain';
 import { addManyToCart } from '@/services/cartService';
+import { friendlyError } from '@/services/errorMessages';
 import { queryKeys } from '@/state/queries/queryKeys';
 import { PageHeader } from '@/ui/components/PageHeader';
 import { Money as MoneyView } from '@/ui/components/Money';
 import { QuickOrderRow, type QuickOrderRowSnapshot } from '../components/QuickOrderRow';
+
+const MAX_CSV_BYTES = 1 * 1024 * 1024; // 1 MB — guards against accidental binary uploads or huge sheets
 
 interface RowEntry {
   key: string;
@@ -65,7 +68,7 @@ export const QuickOrderPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<RowEntry[]>([emptyRow()]);
   const [snapshots, setSnapshots] = useState<Record<string, QuickOrderRowSnapshot>>({});
-  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error' | 'info'; text: string; hint?: string } | null>(null);
 
   const handleSnapshot = useCallback((snap: QuickOrderRowSnapshot) => {
     setSnapshots((prev) => {
@@ -128,18 +131,27 @@ export const QuickOrderPage = () => {
       const text = await navigator.clipboard.readText();
       ingestParsed(parseClipboardCsv(text));
     } catch (e) {
-      setFeedback({
-        kind: 'error',
-        text: e instanceof Error
-          ? `Clipboard read failed: ${e.message}`
-          : 'Clipboard read failed. Your browser may have blocked it.',
-      });
+      const f = friendlyError(e, 'clipboard');
+      setFeedback({ kind: 'error', text: f.text, hint: f.hint });
     }
   };
 
   const onFileChosen = async (file: File) => {
-    const text = await file.text();
-    ingestParsed(parseClipboardCsv(text));
+    if (file.size > MAX_CSV_BYTES) {
+      setFeedback({
+        kind: 'error',
+        text: 'That file is too large.',
+        hint: `Upload a CSV that's 1 MB or smaller (yours is ${(file.size / 1024 / 1024).toFixed(1)} MB), or paste the rows directly.`,
+      });
+      return;
+    }
+    try {
+      const text = await file.text();
+      ingestParsed(parseClipboardCsv(text));
+    } catch (e) {
+      const f = friendlyError(e, 'csv-upload');
+      setFeedback({ kind: 'error', text: f.text, hint: f.hint });
+    }
   };
 
   const snapshotList = useMemo(
@@ -160,6 +172,11 @@ export const QuickOrderPage = () => {
       (s) => s.status === 'resolved' && s.unitPrice,
     );
     if (resolved.length === 0) return null;
+    const currencies = new Set(resolved.map((s) => s.unitPrice!.currency));
+    // If a buyer somehow has rows from multiple currencies (rare in
+    // B2B), skip the rollup rather than show a misleading single-
+    // currency total.
+    if (currencies.size > 1) return null;
     const currency = resolved[0].unitPrice!.currency;
     const amount = resolved.reduce((acc, s) => acc + s.unitPrice!.amount * s.quantity, 0);
     return { amount, currency };
@@ -181,10 +198,8 @@ export const QuickOrderPage = () => {
       setSnapshots({});
     },
     onError: (e) => {
-      setFeedback({
-        kind: 'error',
-        text: e instanceof Error ? e.message : 'Failed to add items to cart.',
-      });
+      const f = friendlyError(e, 'bulk-add');
+      setFeedback({ kind: 'error', text: f.text, hint: f.hint });
     },
   });
 
@@ -241,7 +256,10 @@ export const QuickOrderPage = () => {
               onClose={() => setFeedback(null)}
               sx={{ mb: 2 }}
             >
-              {feedback.text}
+              <Box sx={{ fontWeight: feedback.hint ? 600 : 'inherit' }}>{feedback.text}</Box>
+              {feedback.hint ? (
+                <Box sx={{ mt: 0.5, fontWeight: 400 }}>{feedback.hint}</Box>
+              ) : null}
             </Alert>
           ) : null}
 
