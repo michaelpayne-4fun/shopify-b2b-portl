@@ -53,7 +53,15 @@ export const buildAuthorizeUrl = (input: AuthorizeUrlInput): string => {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', env().SHOPIFY_CAA_CLIENT_ID);
   url.searchParams.set('redirect_uri', env().SHOPIFY_CAA_REDIRECT_URI);
-  url.searchParams.set('scope', (input.scopes ?? ['openid', 'email', 'customer-account-api:full']).join(' '));
+  url.searchParams.set('scope', (input.scopes ?? [
+    'openid',
+    'email',
+    'customer_read_customers',
+    'customer_write_customers',
+    'customer_read_orders',
+    'customer_read_companies',
+    'customer_write_companies',
+  ]).join(' '));
   url.searchParams.set('state', input.state);
   url.searchParams.set('code_challenge', input.codeChallenge);
   url.searchParams.set('code_challenge_method', 'S256');
