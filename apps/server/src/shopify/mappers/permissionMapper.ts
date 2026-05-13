@@ -24,7 +24,11 @@ const ROLE_TO_PERMISSIONS: Record<string, Permission[]> = {
   ],
   'Ordering only': [
     'account.view',
-    'orders.view', 'orders.reorder',
+    // Every buyer with B2B access can see the orders their company
+    // placed, not just their own. Restricting visibility per-user
+    // would mean a Shopify-side membership change, not a portal
+    // permission tweak.
+    'orders.view', 'orders.viewCompany', 'orders.reorder',
     'cart.view', 'cart.update',
     'checkout.begin',
     'addresses.view',
@@ -32,7 +36,7 @@ const ROLE_TO_PERMISSIONS: Record<string, Permission[]> = {
   ],
   Buyer: [
     'account.view',
-    'orders.view',
+    'orders.view', 'orders.viewCompany',
     'cart.view', 'cart.update',
     'addresses.view',
     'company.view',

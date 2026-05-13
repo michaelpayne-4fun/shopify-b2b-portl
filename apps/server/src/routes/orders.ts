@@ -19,13 +19,15 @@ const listSchema = z.object({
 });
 
 // ---------- CAA-specific order shapes ----------
+interface CaaMoney { amount: string; currencyCode: string }
+
 interface CaaLineItem {
   id: string;
-  title: string;
+  name: string;
   quantity: number;
-  price: { amount: string; currencyCode: string };
-  totalPrice: { amount: string; currencyCode: string };
-  merchandise?: { __typename: string; id?: string; sku?: string | null } | null;
+  variantId?: string | null;
+  currentTotalPrice?: CaaMoney | null;
+  unitPrice?: { price: CaaMoney } | null;
 }
 
 interface CaaOrderNode {
@@ -34,26 +36,27 @@ interface CaaOrderNode {
   processedAt: string;
   financialStatus?: string | null;
   fulfillmentStatus?: string | null;
-  totalPrice: { amount: string; currencyCode: string };
-  subtotalPrice?: { amount: string; currencyCode: string } | null;
+  totalPrice: CaaMoney;
+  subtotal?: CaaMoney | null;
   lineItems: { edges: Array<{ node: CaaLineItem }> };
   shippingAddress?: {
     firstName?: string | null; lastName?: string | null;
     address1?: string | null; address2?: string | null;
-    city?: string | null; province?: string | null;
-    zip?: string | null; countryCodeV2?: string | null; phone?: string | null;
+    city?: string | null; zoneCode?: string | null;
+    zip?: string | null; territoryCode?: string | null; phone?: string | null;
   } | null;
   billingAddress?: {
     firstName?: string | null; lastName?: string | null;
     address1?: string | null; address2?: string | null;
-    city?: string | null; province?: string | null;
-    zip?: string | null; countryCodeV2?: string | null; phone?: string | null;
+    city?: string | null; zoneCode?: string | null;
+    zip?: string | null; territoryCode?: string | null; phone?: string | null;
   } | null;
 }
 
 const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
-  const toMoney = (m: { amount: string; currencyCode: string }) => ({ presentmentMoney: m });
+  const toMoney = (m: CaaMoney) => ({ presentmentMoney: m });
   const currency = caa.totalPrice.currencyCode;
+  const zero: CaaMoney = { amount: '0', currencyCode: currency };
   return {
     id: caa.id,
     name: caa.name,
@@ -61,19 +64,26 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
     financialStatus: caa.financialStatus ?? null,
     fulfillmentStatus: caa.fulfillmentStatus ?? null,
     totalPriceSet: toMoney(caa.totalPrice),
-    subtotalPriceSet: toMoney(caa.subtotalPrice ?? { amount: '0', currencyCode: currency }),
+    subtotalPriceSet: toMoney(caa.subtotal ?? zero),
     lineItems: {
       edges: caa.lineItems.edges.map(({ node }) => {
-        const isVariant = node.merchandise?.__typename === 'ProductVariant';
+        const unit = node.unitPrice?.price ?? zero;
+        const total = node.currentTotalPrice ?? {
+          amount: String(Number(unit.amount) * node.quantity),
+          currencyCode: unit.currencyCode,
+        };
         return {
           node: {
             id: node.id,
-            title: node.title,
+            title: node.name,
             quantity: node.quantity,
-            sku: isVariant ? ((node.merchandise as { sku?: string | null }).sku ?? null) : null,
-            variant: isVariant ? { id: (node.merchandise as { id?: string }).id ?? '' } : null,
-            originalUnitPriceSet: toMoney(node.price),
-            originalTotalSet: toMoney(node.totalPrice),
+            // CAA's LineItem doesn't expose variant SKU directly; we
+            // keep null here and let the reorder flow's Admin fallback
+            // resolve full variant detail when needed.
+            sku: null,
+            variant: node.variantId ? { id: node.variantId } : null,
+            originalUnitPriceSet: toMoney(unit),
+            originalTotalSet: toMoney(total),
           },
         };
       }),
@@ -86,9 +96,9 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
       lastName: caa.shippingAddress.lastName,
       address1: caa.shippingAddress.address1,
       city: caa.shippingAddress.city,
-      zoneCode: caa.shippingAddress.province,
+      zoneCode: caa.shippingAddress.zoneCode,
       zip: caa.shippingAddress.zip,
-      territoryCode: caa.shippingAddress.countryCodeV2,
+      territoryCode: caa.shippingAddress.territoryCode,
       phoneNumber: caa.shippingAddress.phone,
     } : null,
     billingAddress: caa.billingAddress ? {
@@ -96,9 +106,9 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
       lastName: caa.billingAddress.lastName,
       address1: caa.billingAddress.address1,
       city: caa.billingAddress.city,
-      zoneCode: caa.billingAddress.province,
+      zoneCode: caa.billingAddress.zoneCode,
       zip: caa.billingAddress.zip,
-      territoryCode: caa.billingAddress.countryCodeV2,
+      territoryCode: caa.billingAddress.territoryCode,
       phoneNumber: caa.billingAddress.phone,
     } : null,
   };
@@ -107,24 +117,21 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
 const CAA_ORDER_FIELDS = `
   id name processedAt fulfillmentStatus financialStatus
   totalPrice { amount currencyCode }
-  subtotalPrice { amount currencyCode }
+  subtotal { amount currencyCode }
   lineItems(first: 50) {
     edges {
       node {
-        id title quantity
-        price { amount currencyCode }
-        totalPrice { amount currencyCode }
-        merchandise {
-          ... on ProductVariant { id sku }
-        }
+        id name quantity variantId
+        currentTotalPrice { amount currencyCode }
+        unitPrice { price { amount currencyCode } }
       }
     }
   }
   shippingAddress {
-    firstName lastName address1 address2 city province zip countryCodeV2 phone
+    firstName lastName address1 address2 city zoneCode zip territoryCode phone
   }
   billingAddress {
-    firstName lastName address1 address2 city province zip countryCodeV2 phone
+    firstName lastName address1 address2 city zoneCode zip territoryCode phone
   }
 `;
 
