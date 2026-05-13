@@ -57,49 +57,60 @@ export const resolveVariantIdBySku = async (
 };
 
 /**
- * Batch-resolve a list of SKUs to {variantId, price} via a single
- * Storefront query. Uses an `OR`-joined `sku:` filter and then
- * exact-matches in code (since the tokeniser otherwise drags in
- * unrelated products that share a name token). Missing SKUs are
- * silently absent from the returned map; callers should treat
- * absence as "not in this buyer's catalog".
+ * Resolve a list of SKUs to {variantId, price} via Storefront. Uses
+ * one query per SKU in parallel — the same shape that
+ * `resolveVariantIdBySku` uses successfully elsewhere in the codebase
+ * (Quick Order). An earlier batched `OR`-joined `sku:` filter returned
+ * empty results even for SKUs known to exist in the buyer's catalog,
+ * so we deliberately do N small queries instead of one big one.
+ *
+ * Missing SKUs (not in this buyer's catalog, query timeout, etc.) are
+ * silently absent from the returned map; callers should treat absence
+ * as "not priceable here". Per-SKU errors are logged and the SKU is
+ * skipped — one upstream hiccup doesn't lose the whole batch.
  */
 export const resolveVariantsBySkus = async (
   skus: string[],
   buyerAccessToken: string,
 ): Promise<Map<string, VariantSummary>> => {
   const out = new Map<string, VariantSummary>();
-  if (skus.length === 0) return out;
-  // De-dupe to keep the query payload small.
-  const unique = Array.from(new Set(skus));
-  // Cap per-query to keep Shopify's query-string length comfortable.
-  // 25 SKUs * (~30 chars each) is ~750 chars — well under the limit.
-  const CHUNK = 25;
-  for (let i = 0; i < unique.length; i += CHUNK) {
-    const slice = unique.slice(i, i + CHUNK);
-    const filter = slice.map((s) => `sku:${s}`).join(' OR ');
-    const data = await storefrontQuery<ProductsBySkuResult>(
-      `query VariantsBySkus($q: String!, $first: Int!) {
-         products(query: $q, first: $first) {
-           edges { node { variants(first: 50) { edges { node { id sku price { amount currencyCode } } } } } }
-         }
-       }`,
-      { q: filter, first: Math.max(slice.length * 2, 10) },
-      { buyerAccessToken },
-    );
-    for (const productEdge of data.products.edges) {
-      for (const variantEdge of productEdge.node.variants.edges) {
-        const v = variantEdge.node;
-        if (!v.sku || out.has(v.sku)) continue;
-        if (!slice.includes(v.sku)) continue;
-        out.set(v.sku, {
-          variantId: v.id,
-          price: v.price
-            ? { amount: Number(v.price.amount), currency: v.price.currencyCode }
-            : { amount: 0, currency: 'USD' },
-        });
+  const unique = Array.from(new Set(skus.filter(Boolean)));
+  if (unique.length === 0) return out;
+  await Promise.all(
+    unique.map(async (sku) => {
+      try {
+        const data = await storefrontQuery<ProductsBySkuResult>(
+          `query Sku($q: String!) {
+             products(query: $q, first: 10) {
+               edges {
+                 node {
+                   variants(first: 25) {
+                     edges { node { id sku price { amount currencyCode } } }
+                   }
+                 }
+               }
+             }
+           }`,
+          { q: `sku:${sku}` },
+          { buyerAccessToken },
+        );
+        for (const productEdge of data.products.edges) {
+          for (const variantEdge of productEdge.node.variants.edges) {
+            const v = variantEdge.node;
+            if (v.sku !== sku) continue;
+            if (!v.price) continue;
+            out.set(sku, {
+              variantId: v.id,
+              price: { amount: Number(v.price.amount), currency: v.price.currencyCode },
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`[resolveVariantsBySkus] sku=${sku} lookup failed:`, err);
       }
-    }
-  }
+    }),
+  );
   return out;
 };
