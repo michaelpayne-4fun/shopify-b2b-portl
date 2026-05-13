@@ -10,8 +10,8 @@ export const updateShoppingList = (id: string, input: Partial<ShoppingListInput>
   bff.patch<ShoppingList>(`/shopping-lists/${encodeURIComponent(id)}`, input);
 export const deleteShoppingList = (id: string) =>
   bff.delete<void>(`/shopping-lists/${encodeURIComponent(id)}`);
-export const addItemToList = (id: string, sku: string, quantity: number) =>
-  bff.post<ShoppingList>(`/shopping-lists/${encodeURIComponent(id)}/items`, { sku, quantity });
+export const addItemToList = (id: string, sku: string, quantity: number, name?: string) =>
+  bff.post<ShoppingList>(`/shopping-lists/${encodeURIComponent(id)}/items`, { sku, quantity, name });
 export const removeItemFromList = (id: string, itemId: string) =>
   bff.delete<ShoppingList>(
     `/shopping-lists/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`,

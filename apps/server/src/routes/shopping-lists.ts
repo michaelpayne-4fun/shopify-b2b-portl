@@ -63,7 +63,7 @@ shoppingListRoutes.delete('/shopping-lists/:id', requirePermission('shoppingList
   return c.body(null, 204);
 });
 
-const itemSchema = z.object({ sku: z.string().min(1), quantity: z.number().int().positive() });
+const itemSchema = z.object({ sku: z.string().min(1), quantity: z.number().int().positive(), name: z.string().optional() });
 
 shoppingListRoutes.post(
   '/shopping-lists/:id/items',
@@ -74,6 +74,7 @@ shoppingListRoutes.post(
       listId: c.req.param('id'),
       sku: c.req.valid('json').sku,
       quantity: c.req.valid('json').quantity,
+      name: c.req.valid('json').name,
     });
     return c.json(list);
   },
