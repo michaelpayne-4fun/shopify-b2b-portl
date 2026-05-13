@@ -8,7 +8,7 @@ import type { AppVariables } from '../middleware/types';
 
 export const addressRoutes = new Hono<{ Variables: AppVariables }>();
 
-const ADDR_FIELDS = `id firstName lastName company address1 address2 city zoneCode zip territoryCode phoneNumber`;
+const ADDR_FIELDS = `id firstName lastName company address1 address2 city zoneCode zip territoryCode phone`;
 
 interface PersonalAddressesData {
   customer: {

@@ -151,10 +151,10 @@ const ADMIN_ORDER_FIELDS = `
     }
   }
   shippingAddress {
-    firstName lastName address1 address2 city zoneCode zip territoryCode phoneNumber
+    firstName lastName company address1 address2 city provinceCode zip countryCodeV2 phone
   }
   billingAddress {
-    firstName lastName address1 address2 city zoneCode zip territoryCode phoneNumber
+    firstName lastName company address1 address2 city provinceCode zip countryCodeV2 phone
   }
   purchasingEntity { __typename ... on PurchasingCompany { company { id } location { id } } }
   customer { id }

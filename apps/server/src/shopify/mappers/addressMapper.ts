@@ -1,5 +1,18 @@
 import type { Address, AddressScope } from '@b2b/domain';
 
+/**
+ * Address payloads come from two different Shopify GraphQL APIs that
+ * give the same logical fields different names. The mapper accepts
+ * any of them so the rest of the codebase doesn't care which API the
+ * data came from.
+ *
+ *   Field          Admin (MailingAddress)   Customer Account (CustomerAddress / CompanyAddress)
+ *   ------------   ----------------------   --------------------------------------------------
+ *   company name   company                  company / companyName
+ *   region code    provinceCode             zoneCode
+ *   country code   countryCodeV2            territoryCode
+ *   phone          phone                    phone
+ */
 export interface ShopifyMailingAddress {
   id?: string;
   firstName?: string | null;
@@ -13,6 +26,7 @@ export interface ShopifyMailingAddress {
   zoneCode?: string | null;
   zip?: string | null;
   countryCode?: string | null;
+  countryCodeV2?: string | null;
   territoryCode?: string | null;
   phone?: string | null;
   phoneNumber?: string | null;
@@ -33,7 +47,7 @@ export const mapShopifyAddress = (
   city: raw.city ?? '',
   region: raw.zoneCode ?? raw.provinceCode ?? '',
   postalCode: raw.zip ?? '',
-  countryCode: raw.countryCode ?? raw.territoryCode ?? '',
+  countryCode: raw.countryCodeV2 ?? raw.territoryCode ?? raw.countryCode ?? '',
   phone: raw.phone ?? raw.phoneNumber ?? undefined,
   isDefaultBilling: opts.isDefaultBilling,
   isDefaultShipping: opts.isDefaultShipping,
