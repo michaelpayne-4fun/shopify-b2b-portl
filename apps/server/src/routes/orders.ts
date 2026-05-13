@@ -18,43 +18,155 @@ const listSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-const ORDER_FIELDS = `
+// ---------- CAA-specific order shapes ----------
+interface CaaLineItem {
+  id: string;
+  title: string;
+  quantity: number;
+  price: { amount: string; currencyCode: string };
+  totalPrice: { amount: string; currencyCode: string };
+  merchandise?: { __typename: string; id?: string; sku?: string | null } | null;
+}
+
+interface CaaOrderNode {
+  id: string;
+  name: string;
+  processedAt: string;
+  financialStatus?: string | null;
+  fulfillmentStatus?: string | null;
+  totalPrice: { amount: string; currencyCode: string };
+  subtotalPrice?: { amount: string; currencyCode: string } | null;
+  lineItems: { edges: Array<{ node: CaaLineItem }> };
+  shippingAddress?: {
+    firstName?: string | null; lastName?: string | null;
+    address1?: string | null; address2?: string | null;
+    city?: string | null; province?: string | null;
+    zip?: string | null; countryCodeV2?: string | null; phone?: string | null;
+  } | null;
+  billingAddress?: {
+    firstName?: string | null; lastName?: string | null;
+    address1?: string | null; address2?: string | null;
+    city?: string | null; province?: string | null;
+    zip?: string | null; countryCodeV2?: string | null; phone?: string | null;
+  } | null;
+}
+
+const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
+  const toMoney = (m: { amount: string; currencyCode: string }) => ({ presentmentMoney: m });
+  const currency = caa.totalPrice.currencyCode;
+  return {
+    id: caa.id,
+    name: caa.name,
+    processedAt: caa.processedAt,
+    financialStatus: caa.financialStatus ?? null,
+    fulfillmentStatus: caa.fulfillmentStatus ?? null,
+    totalPriceSet: toMoney(caa.totalPrice),
+    subtotalPriceSet: toMoney(caa.subtotalPrice ?? { amount: '0', currencyCode: currency }),
+    lineItems: {
+      edges: caa.lineItems.edges.map(({ node }) => {
+        const isVariant = node.merchandise?.__typename === 'ProductVariant';
+        return {
+          node: {
+            id: node.id,
+            title: node.title,
+            quantity: node.quantity,
+            sku: isVariant ? ((node.merchandise as { sku?: string | null }).sku ?? null) : null,
+            variant: isVariant ? { id: (node.merchandise as { id?: string }).id ?? '' } : null,
+            originalUnitPriceSet: toMoney(node.price),
+            originalTotalSet: toMoney(node.totalPrice),
+          },
+        };
+      }),
+    },
+    poNumber: null,
+    purchasingEntity: null,
+    customer: null,
+    shippingAddress: caa.shippingAddress ? {
+      firstName: caa.shippingAddress.firstName,
+      lastName: caa.shippingAddress.lastName,
+      address1: caa.shippingAddress.address1,
+      city: caa.shippingAddress.city,
+      zoneCode: caa.shippingAddress.province,
+      zip: caa.shippingAddress.zip,
+      territoryCode: caa.shippingAddress.countryCodeV2,
+      phoneNumber: caa.shippingAddress.phone,
+    } : null,
+    billingAddress: caa.billingAddress ? {
+      firstName: caa.billingAddress.firstName,
+      lastName: caa.billingAddress.lastName,
+      address1: caa.billingAddress.address1,
+      city: caa.billingAddress.city,
+      zoneCode: caa.billingAddress.province,
+      zip: caa.billingAddress.zip,
+      territoryCode: caa.billingAddress.countryCodeV2,
+      phoneNumber: caa.billingAddress.phone,
+    } : null,
+  };
+};
+
+const CAA_ORDER_FIELDS = `
+  id name processedAt fulfillmentStatus financialStatus
+  totalPrice { amount currencyCode }
+  subtotalPrice { amount currencyCode }
+  lineItems(first: 50) {
+    edges {
+      node {
+        id title quantity
+        price { amount currencyCode }
+        totalPrice { amount currencyCode }
+        merchandise {
+          ... on ProductVariant { id sku }
+        }
+      }
+    }
+  }
+  shippingAddress {
+    firstName lastName address1 address2 city province zip countryCodeV2 phone
+  }
+  billingAddress {
+    firstName lastName address1 address2 city province zip countryCodeV2 phone
+  }
+`;
+
+
+const ADMIN_ORDER_FIELDS = `
   id name processedAt fulfillmentStatus financialStatus poNumber
   totalPriceSet { presentmentMoney { amount currencyCode } }
   subtotalPriceSet { presentmentMoney { amount currencyCode } }
   lineItems(first: 50) {
     edges {
       node {
-        id sku title quantity
+        id title quantity sku
         variant { id }
         originalUnitPriceSet { presentmentMoney { amount currencyCode } }
         originalTotalSet { presentmentMoney { amount currencyCode } }
       }
     }
   }
-  shippingAddress { firstName lastName company address1 address2 city zoneCode zip territoryCode phoneNumber }
-  billingAddress { firstName lastName company address1 address2 city zoneCode zip territoryCode phoneNumber }
-  purchasingEntity { __typename ... on PurchasingCompany { company { id } location { id } } }
+  shippingAddress {
+    firstName lastName address1 address2 city zoneCode zip territoryCode phoneNumber
+  }
+  billingAddress {
+    firstName lastName address1 address2 city zoneCode zip territoryCode phoneNumber
+  }
+  purchasingEntity { __typename ... on Company { id } ... on CompanyLocation { id } }
   customer { id }
 `;
 
 const MINE_ORDERS_QUERY = `
   query MyOrders($first: Int!) {
-    customer { orders(first: $first) { edges { node { ${ORDER_FIELDS} } } } }
+    customer { orders(first: $first) { edges { node { ${CAA_ORDER_FIELDS} } } } }
   }
 `;
 
 const COMPANY_ORDERS_QUERY = `
   query CompanyOrders($first: Int!, $query: String!) {
     orders(first: $first, query: $query) {
-      edges { node { ${ORDER_FIELDS} } }
+      edges { node { ${ADMIN_ORDER_FIELDS} } }
     }
   }
 `;
 
-interface MineOrdersData {
-  customer: { orders: { edges: Array<{ node: ShopifyOrderNode }> } };
-}
 interface CompanyOrdersData {
   orders: { edges: Array<{ node: ShopifyOrderNode }> };
 }
@@ -67,12 +179,21 @@ const list = async (
 ) => {
   if (!auth) throw new Error('unauthorized');
   if (scope === 'mine') {
-    const d = await customerAccountQuery<MineOrdersData>(
-      auth.caaAccessToken,
-      MINE_ORDERS_QUERY,
-      { first: pageSize },
-    );
-    return d.customer.orders.edges.map((e) => mapShopifyOrder(e.node));
+    try {
+      const d = await customerAccountQuery<{ customer: { orders: { edges: Array<{ node: CaaOrderNode }> } } }>(
+        auth.caaAccessToken,
+        MINE_ORDERS_QUERY,
+        { first: pageSize },
+      );
+      return d.customer.orders.edges.map((e) => mapShopifyOrder(normalizeCaaOrder(e.node)));
+    } catch {
+      // CAA unavailable or token expired — fall through to Admin API
+    }
+    // Admin fallback: filter by customer email is unreliable; use company scope
+    // scoped to this contact's location as a best-effort mine approximation
+    const buyerFilter = `company_location_id:${auth.location?.shopifyLocationGid ?? auth.company.shopifyCompanyGid}`;
+    const d = await adminQuery<CompanyOrdersData>(COMPANY_ORDERS_QUERY, { first: pageSize, query: buyerFilter });
+    return d.orders.edges.map((e) => mapShopifyOrder(e.node));
   }
   const filter = [
     `company_location_id:${auth.location?.shopifyLocationGid ?? auth.company.shopifyCompanyGid}`,
@@ -95,17 +216,17 @@ orderRoutes.get('/orders/:id', async (c) => {
   const auth = c.var.auth!;
   // Try CAA first; fall back to admin.
   try {
-    const d = await customerAccountQuery<{ customer: { order: ShopifyOrderNode | null } }>(
+    const d = await customerAccountQuery<{ customer: { order: CaaOrderNode | null } }>(
       auth.caaAccessToken,
-      `query OneOrder($id: ID!) { customer { order(id: $id) { ${ORDER_FIELDS} } } }`,
+      `query OneOrder($id: ID!) { customer { order(id: $id) { ${CAA_ORDER_FIELDS} } } }`,
       { id },
     );
-    if (d.customer.order) return c.json(mapShopifyOrder(d.customer.order));
+    if (d.customer.order) return c.json(mapShopifyOrder(normalizeCaaOrder(d.customer.order)));
   } catch {
     // fall through
   }
   const d = await adminQuery<{ order: ShopifyOrderNode | null }>(
-    `query OneOrder($id: ID!) { order(id: $id) { ${ORDER_FIELDS} } }`,
+    `query OneOrder($id: ID!) { order(id: $id) { ${ADMIN_ORDER_FIELDS} } }`,
     { id },
   );
   if (!d.order) throw new NotFoundError('Order', id);
@@ -119,18 +240,18 @@ orderRoutes.post('/orders/:id/reorder', async (c) => {
   // Reuse the same lookup used by GET /orders/:id (CAA preferred, Admin fallback).
   let node: ShopifyOrderNode | null = null;
   try {
-    const d = await customerAccountQuery<{ customer: { order: ShopifyOrderNode | null } }>(
+    const d = await customerAccountQuery<{ customer: { order: CaaOrderNode | null } }>(
       auth.caaAccessToken,
-      `query OneOrder($id: ID!) { customer { order(id: $id) { ${ORDER_FIELDS} } } }`,
+      `query OneOrder($id: ID!) { customer { order(id: $id) { ${CAA_ORDER_FIELDS} } } }`,
       { id },
     );
-    node = d.customer.order;
+    node = d.customer.order ? normalizeCaaOrder(d.customer.order) : null;
   } catch {
     // fall through to admin
   }
   if (!node) {
     const d = await adminQuery<{ order: ShopifyOrderNode | null }>(
-      `query OneOrder($id: ID!) { order(id: $id) { ${ORDER_FIELDS} } }`,
+      `query OneOrder($id: ID!) { order(id: $id) { ${ADMIN_ORDER_FIELDS} } }`,
       { id },
     );
     node = d.order;
