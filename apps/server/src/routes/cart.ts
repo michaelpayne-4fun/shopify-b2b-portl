@@ -40,7 +40,9 @@ const ensureCart = async (
     renderCartQuery(CART_CREATE_MUTATION),
     {
       input: {
-        buyerIdentity: companyLocationId ? { companyLocationId } : undefined,
+        buyerIdentity: companyLocationId
+            ? { companyLocationId, customerAccessToken: buyerAccessToken }
+            : { customerAccessToken: buyerAccessToken },
       },
     },
     { buyerAccessToken },
