@@ -149,7 +149,7 @@ const ADMIN_ORDER_FIELDS = `
   billingAddress {
     firstName lastName address1 address2 city zoneCode zip territoryCode phoneNumber
   }
-  purchasingEntity { __typename ... on Company { id } ... on CompanyLocation { id } }
+  purchasingEntity { __typename ... on PurchasingCompany { company { id } location { id } } }
   customer { id }
 `;
 
