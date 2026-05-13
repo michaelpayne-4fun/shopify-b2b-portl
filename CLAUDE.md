@@ -47,11 +47,28 @@ These rules hold for Claude Code, Cowork, and any other agent operating
 in this repo. They exist because every one of them was added after a
 real failure during development.
 
-1. **Never guess.** Before touching code to fix a bug, identify a
-   data-driven signal that proves the diagnosis: a log line, a failing
-   test, a schema validator result, a database row, a `curl` output.
-   Cite the source in the commit message. If no such signal is
-   available, your first step is to obtain one — not to ship code.
+1. **Never guess.** Before touching code to fix a bug, you must have
+   one of these data-driven signals proving the diagnosis:
+   - A server log line (`fly logs --no-tail --app <app> | tail -200`
+     or local stderr) that names the failing operation.
+   - The HTTP response body / status from the actual failing request
+     (curl or browser devtools).
+   - A failing test that reproduces the bug.
+   - A schema validator result (`validate_graphql_codeblocks`) —
+     but only for GraphQL syntax / field-name issues.
+   - A DB row, `gh api ...`, or other artifact that pins the state.
+
+   **Schema-valid does not mean runtime-correct.** A GraphQL query
+   that passes `validate_graphql_codeblocks` can still return empty,
+   nil out a field, or be rejected by scope / catalog membership at
+   runtime. Before shipping a runtime-behavior fix, get a runtime
+   signal (log line or response body).
+
+   Cite the signal in the commit message — file path / log timestamp /
+   curl excerpt. If no such signal is available, your first step is
+   to obtain one, not to ship code. The only acceptable form of
+   "ship to test" is an explicit hypothesis change (one variable)
+   with the next-step diagnostic call-to-action in the same message.
 
 2. **Shopify GraphQL changes are validated before push.** Every query
    or mutation edit goes through `validate_graphql_codeblocks` against
