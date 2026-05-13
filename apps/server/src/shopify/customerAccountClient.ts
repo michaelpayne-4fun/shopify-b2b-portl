@@ -20,6 +20,7 @@ export const customerAccountQuery = async <T>(
     headers: {
       'content-type': 'application/json',
       authorization: accessToken,
+      origin: env().PUBLIC_PORTAL_URL,
     },
     body: JSON.stringify({ query, variables }),
   });
