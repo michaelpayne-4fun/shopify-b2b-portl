@@ -59,13 +59,29 @@ const COMPANY_CONTACTS_QUERY = `
 
 userRoutes.get('/users', async (c) => {
   const auth = c.var.auth!;
-  const data = await adminQuery<CompanyContactsData>(COMPANY_CONTACTS_QUERY, {
-    id: auth.company.shopifyCompanyGid,
-    first: 100,
-  });
-  if (!data.company) throw new NotFoundError('Company', auth.company.id);
 
-  const buyerIds = data.company.contacts.edges.map((e) => e.node.customer.id);
+  // This query requires the read_customers Admin API scope. If the app lacks it,
+  // Shopify returns ACCESS_DENIED — degrade to an empty list so the rest of the
+  // admin UI (role grants, settings, etc.) keeps working.
+  type ContactEdge = NonNullable<CompanyContactsData['company']>['contacts']['edges'][number];
+  let contactEdges: ContactEdge[] = [];
+  let scopeWarning = false;
+  try {
+    const data = await adminQuery<CompanyContactsData>(COMPANY_CONTACTS_QUERY, {
+      id: auth.company.shopifyCompanyGid,
+      first: 100,
+    });
+    contactEdges = data.company?.contacts.edges ?? [];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/ACCESS_DENIED|FORBIDDEN|unauthorized|read_customers/i.test(msg)) {
+      scopeWarning = true;
+    } else {
+      throw err;
+    }
+  }
+
+  const buyerIds = contactEdges.map((e) => e.node.customer.id);
   const grants = new Map<string, Permission[]>();
   if (buyerIds.length > 0) {
     const rows = await c.var.db.select().from(roleAssignments);
@@ -78,7 +94,7 @@ userRoutes.get('/users', async (c) => {
     }
   }
 
-  const items: Buyer[] = data.company.contacts.edges.map((e) => {
+  const items: Buyer[] = contactEdges.map((e) => {
     const node = e.node;
     const shopifyRole = node.roleAssignments.edges[0]?.node.role.name ?? 'Buyer';
     const shopifyPerms = mapShopifyRoleToPermissions(shopifyRole);
@@ -99,7 +115,11 @@ userRoutes.get('/users', async (c) => {
     };
   });
 
-  return c.json({ items, page: 1, pageSize: items.length, totalItems: items.length, totalPages: 1 });
+  const res = c.json({ items, page: 1, pageSize: items.length, totalItems: items.length, totalPages: 1 });
+  if (scopeWarning) {
+    res.headers.set('X-Warning', 'read_customers scope not granted — user list unavailable');
+  }
+  return res;
 });
 
 const COMPANY_ROLES_QUERY = `

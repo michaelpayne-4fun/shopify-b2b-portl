@@ -1,5 +1,5 @@
 import {
-  Card, CardContent, Checkbox, FormControlLabel, Stack, Typography,
+  Alert, Card, CardContent, Checkbox, FormControlLabel, Stack, Typography,
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Permission } from '@b2b/domain';
@@ -16,6 +16,8 @@ const ASSIGNABLE_BASE: Permission[] = PORTAL_ONLY_PERMISSIONS as Permission[];
 
 export const RoleGrantsPage = () => {
   const qc = useQueryClient();
+  // Users query: failures here should NOT block role-grants from working.
+  // The server degrades to an empty list when read_customers scope is missing.
   const users = useQuery({ queryKey: queryKeys.users, queryFn: listUsers });
   const grants = useQuery({ queryKey: queryKeys.admin.grants, queryFn: listRoleGrants });
   const save = useMutation({
@@ -24,22 +26,41 @@ export const RoleGrantsPage = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.grants }),
   });
 
-  if (users.isLoading || grants.isLoading) return <LoadingState />;
-  if (users.error) return <ErrorState error={users.error} />;
-  if (grants.error) return <ErrorState error={grants.error} />;
+  if (grants.isLoading || users.isLoading) return <LoadingState />;
+  // Only hard-fail on grants error; users error is shown as a soft warning
+  if (grants.error) return <ErrorState error={grants.error} onRetry={grants.refetch} />;
 
   const assignable = ASSIGNABLE_BASE.filter(
     (p) => p !== 'approvals.act' || appConfig.features.approvals,
   );
 
   const byUser = new Map(grants.data?.map((g) => [g.userId, g.grants]) ?? []);
+  const userList = users.data?.items ?? [];
 
   return (
     <>
-      <PageHeader title="Role grants"
-        description="Augment Shopify's coarse role with portal-only permissions." />
+      <PageHeader
+        title="Role grants"
+        description="Augment Shopify's coarse role with portal-only permissions."
+      />
+
+      {users.error && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Could not load company contacts — the Shopify app may be missing the{' '}
+          <strong>read_customers</strong> scope. Add it in the Shopify Partner Dashboard then
+          reinstall the app. Role grant data is unaffected.
+        </Alert>
+      )}
+
+      {!users.error && userList.length === 0 && !users.isLoading && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          No company contacts found. Contacts will appear here once buyers are added to your
+          company in Shopify.
+        </Alert>
+      )}
+
       <Stack spacing={2}>
-        {(users.data?.items ?? []).map((u) => {
+        {userList.map((u) => {
           const current = byUser.get(u.id) ?? [];
           const toggle = (perm: Permission) => {
             const next = current.includes(perm)
@@ -60,7 +81,8 @@ export const RoleGrantsPage = () => {
                       <Checkbox checked={current.includes(p)} onChange={() => toggle(p)}
                         disabled={save.isPending} />
                     }
-                    label={p} />
+                    label={p}
+                  />
                 ))}
               </Stack>
             </CardContent></Card>
