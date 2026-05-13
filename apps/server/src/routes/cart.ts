@@ -40,10 +40,14 @@ cartRoutes.post('/cart/items', zValidator('json', addItemSchema), async (c) => {
   const cart = await ensureCart(c.var.db, auth.sessionId, auth.caaAccessToken, auth.location?.shopifyLocationGid);
 
   // Resolve sku -> variantId if needed. resolveVariantIdBySku does the
-  // exact-SKU filter that Shopify's tokenised `sku:` query lacks.
+  // exact-SKU filter that Shopify's tokenised `sku:` query lacks, and
+  // is scoped to the buyer's catalog via @inContext(buyer:).
   let variantId = input.variantId;
   if (!variantId && input.sku) {
-    variantId = (await resolveVariantIdBySku(input.sku, auth.caaAccessToken)) ?? undefined;
+    variantId = (await resolveVariantIdBySku(input.sku, {
+      companyLocationId: auth.location?.shopifyLocationGid ?? auth.company.shopifyCompanyGid,
+      customerAccessToken: auth.caaAccessToken,
+    })) ?? undefined;
     if (!variantId) throw new ValidationError(`Unknown SKU "${input.sku}"`);
   }
 

@@ -25,13 +25,13 @@ shoppingListRoutes.use('*', requireFeatureFlag('shoppingLists'));
  */
 const enrichWithPrices = async (
   list: ShoppingList,
-  buyerAccessToken: string,
+  ctx: { companyLocationId: string; customerAccessToken: string },
 ): Promise<ShoppingList> => {
   if (list.items.length === 0) return list;
   try {
     const summaries = await resolveVariantsBySkus(
       list.items.map((it) => it.sku),
-      buyerAccessToken,
+      ctx,
     );
     return {
       ...list,
@@ -59,7 +59,7 @@ shoppingListRoutes.get('/shopping-lists', requirePermission('shoppingLists.view'
 
 shoppingListRoutes.get('/shopping-lists/:id', requirePermission('shoppingLists.view'), async (c) => {
   const list = await getShoppingList(c.var.db, c.req.param('id'));
-  return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
+  return c.json(await enrichWithPrices(list, { companyLocationId: c.var.auth!.location?.shopifyLocationGid ?? c.var.auth!.company.shopifyCompanyGid, customerAccessToken: c.var.auth!.caaAccessToken }));
 });
 
 const upsertSchema = z.object({
@@ -121,7 +121,7 @@ shoppingListRoutes.post(
       name: input.name,
       variantId: input.variantId,
     });
-    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
+    return c.json(await enrichWithPrices(list, { companyLocationId: c.var.auth!.location?.shopifyLocationGid ?? c.var.auth!.company.shopifyCompanyGid, customerAccessToken: c.var.auth!.caaAccessToken }));
   },
 );
 
@@ -143,7 +143,7 @@ shoppingListRoutes.patch(
       c.req.param('itemId'),
       c.req.valid('json'),
     );
-    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
+    return c.json(await enrichWithPrices(list, { companyLocationId: c.var.auth!.location?.shopifyLocationGid ?? c.var.auth!.company.shopifyCompanyGid, customerAccessToken: c.var.auth!.caaAccessToken }));
   },
 );
 
@@ -152,7 +152,7 @@ shoppingListRoutes.delete(
   requirePermission('shoppingLists.manage'),
   async (c) => {
     const list = await removeItem(c.var.db, c.req.param('id'), c.req.param('itemId'));
-    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
+    return c.json(await enrichWithPrices(list, { companyLocationId: c.var.auth!.location?.shopifyLocationGid ?? c.var.auth!.company.shopifyCompanyGid, customerAccessToken: c.var.auth!.caaAccessToken }));
   },
 );
 
@@ -187,7 +187,10 @@ shoppingListRoutes.post('/shopping-lists/:id/add-to-cart', requirePermission('ca
       Promise.all(
         skuLookupNeeded.map(async (it) => {
           try {
-            const vid = await resolveVariantIdBySku(it.sku, auth.caaAccessToken);
+            const vid = await resolveVariantIdBySku(it.sku, {
+              companyLocationId: auth.location?.shopifyLocationGid ?? auth.company.shopifyCompanyGid,
+              customerAccessToken: auth.caaAccessToken,
+            });
             if (vid) variantMap.set(it.sku, vid);
           } catch (err) {
             // eslint-disable-next-line no-console

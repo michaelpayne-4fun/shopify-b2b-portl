@@ -53,7 +53,13 @@ export const COMPANY_FOR_CUSTOMER_QUERY = `
 `;
 
 export const PRODUCTS_SEARCH_QUERY = `
-  query ProductsSearch($query: String, $first: Int!, $after: String) {
+  query ProductsSearch(
+    $query: String,
+    $first: Int!,
+    $after: String,
+    $companyLocationId: ID!,
+    $customerAccessToken: String!
+  ) @inContext(buyer: { companyLocationId: $companyLocationId, customerAccessToken: $customerAccessToken }) {
     products(query: $query, first: $first, after: $after) {
       pageInfo { hasNextPage endCursor }
       edges {

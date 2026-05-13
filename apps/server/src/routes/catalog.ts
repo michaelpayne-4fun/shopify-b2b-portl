@@ -22,12 +22,21 @@ const searchSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+// Storefront's @inContext(buyer:) directive needs both the buyer's
+// CAA access token and the buyer's company location GID to scope the
+// query to the B2B catalog. Passing the token via header alone reaches
+// a default scope that excludes most catalog-only products.
+const buyerCtx = (auth: NonNullable<AppVariables['auth']>) => ({
+  companyLocationId: auth.location?.shopifyLocationGid ?? auth.company.shopifyCompanyGid,
+  customerAccessToken: auth.caaAccessToken,
+});
+
 catalogRoutes.get('/catalog/search', zValidator('query', searchSchema), async (c) => {
   const { q, pageSize } = c.req.valid('query');
   const auth = c.var.auth!;
   const data = await storefrontQuery<ProductsSearchData>(
     PRODUCTS_SEARCH_QUERY,
-    { query: q, first: pageSize, after: null },
+    { query: q, first: pageSize, after: null, ...buyerCtx(auth) },
     { buyerAccessToken: auth.caaAccessToken },
   );
   const items = data.products.edges.map((e) => mapShopifyProduct(e.node));
@@ -45,7 +54,7 @@ catalogRoutes.get('/catalog/sku/:sku', async (c) => {
   const auth = c.var.auth!;
   const data = await storefrontQuery<ProductsSearchData>(
     PRODUCTS_SEARCH_QUERY,
-    { query: `sku:${sku}`, first: 10, after: null },
+    { query: `sku:${sku}`, first: 10, after: null, ...buyerCtx(auth) },
     { buyerAccessToken: auth.caaAccessToken },
   );
   // Shopify's storefront search tokenises `sku:` queries, so
