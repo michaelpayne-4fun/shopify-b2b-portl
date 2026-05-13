@@ -1,5 +1,5 @@
 # Rename `app` to a globally unique name before `fly launch`.
-app = "shopify-b2b-portal"
+app = "shopb2bapp-b2b-portal"
 primary_region = "ord"
 
 [build]
