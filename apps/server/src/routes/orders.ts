@@ -222,22 +222,29 @@ orderRoutes.get('/orders', zValidator('query', listSchema), async (c) => {
   });
 });
 
+// Single-order CAA query — Customer.order(id:) does NOT exist in the CAA
+// schema (verified with validate_graphql_codeblocks); the top-level
+// order(id:) query is the right surface and is scoped to the buyer
+// automatically by the CAA access token.
+const CAA_ONE_ORDER_QUERY = `query OneOrder($id: ID!) { order(id: $id) { ${CAA_ORDER_FIELDS} } }`;
+const ADMIN_ONE_ORDER_QUERY = `query OneOrder($id: ID!) { order(id: $id) { ${ADMIN_ORDER_FIELDS} } }`;
+
 orderRoutes.get('/orders/:id', async (c) => {
   const id = c.req.param('id');
   const auth = c.var.auth!;
   // Try CAA first; fall back to admin.
   try {
-    const d = await customerAccountQuery<{ customer: { order: CaaOrderNode | null } }>(
+    const d = await customerAccountQuery<{ order: CaaOrderNode | null }>(
       auth.caaAccessToken,
-      `query OneOrder($id: ID!) { customer { order(id: $id) { ${CAA_ORDER_FIELDS} } } }`,
+      CAA_ONE_ORDER_QUERY,
       { id },
     );
-    if (d.customer.order) return c.json(mapShopifyOrder(normalizeCaaOrder(d.customer.order)));
+    if (d.order) return c.json(mapShopifyOrder(normalizeCaaOrder(d.order)));
   } catch {
     // fall through
   }
   const d = await adminQuery<{ order: ShopifyOrderNode | null }>(
-    `query OneOrder($id: ID!) { order(id: $id) { ${ADMIN_ORDER_FIELDS} } }`,
+    ADMIN_ONE_ORDER_QUERY,
     { id },
   );
   if (!d.order) throw new NotFoundError('Order', id);
@@ -251,18 +258,18 @@ orderRoutes.post('/orders/:id/reorder', async (c) => {
   // Reuse the same lookup used by GET /orders/:id (CAA preferred, Admin fallback).
   let node: ShopifyOrderNode | null = null;
   try {
-    const d = await customerAccountQuery<{ customer: { order: CaaOrderNode | null } }>(
+    const d = await customerAccountQuery<{ order: CaaOrderNode | null }>(
       auth.caaAccessToken,
-      `query OneOrder($id: ID!) { customer { order(id: $id) { ${CAA_ORDER_FIELDS} } } }`,
+      CAA_ONE_ORDER_QUERY,
       { id },
     );
-    node = d.customer.order ? normalizeCaaOrder(d.customer.order) : null;
+    node = d.order ? normalizeCaaOrder(d.order) : null;
   } catch {
     // fall through to admin
   }
   if (!node) {
     const d = await adminQuery<{ order: ShopifyOrderNode | null }>(
-      `query OneOrder($id: ID!) { order(id: $id) { ${ADMIN_ORDER_FIELDS} } }`,
+      ADMIN_ONE_ORDER_QUERY,
       { id },
     );
     node = d.order;
