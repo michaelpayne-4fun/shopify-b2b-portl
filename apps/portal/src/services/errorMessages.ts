@@ -70,19 +70,27 @@ export const friendlyError = (err: unknown, context: ErrorContext): FriendlyMess
         hint: 'Wait a moment and try again.',
       };
     }
-    if (status >= 500) {
-      return {
-        chipLabel: 'Unavailable',
-        text: 'Our catalog is temporarily unavailable.',
-        hint: 'Please try again in a moment.',
-      };
-    }
 
+    // Context-specific 404 handling runs BEFORE the generic 5xx
+    // branch. A confused upstream (e.g., Fly proxy briefly returning
+    // 502 while a backend rolls) shouldn't overwrite a genuinely
+    // catalog-miss message — the buyer's action is the same either
+    // way ("not in your catalog, ask your rep"), and treating an
+    // intermittent 5xx as the 404 they actually asked for is
+    // strictly better UX than a misleading "temporarily unavailable".
     if (context === 'sku-lookup' && status === 404) {
       return {
         chipLabel: 'Not in catalog',
         text: 'Not in your catalog.',
         hint: 'Double-check the SKU, or ask your account manager if it should be available to you.',
+      };
+    }
+
+    if (status >= 500) {
+      return {
+        chipLabel: 'Unavailable',
+        text: 'Our catalog is temporarily unavailable.',
+        hint: 'Please try again in a moment.',
       };
     }
 
