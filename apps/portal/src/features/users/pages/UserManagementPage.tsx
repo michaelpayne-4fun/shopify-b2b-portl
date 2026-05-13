@@ -117,7 +117,7 @@ export const UserManagementPage = () => {
                       <FormControl size="small" sx={{ minWidth: 160 }}>
                         <Select
                           value={u.role.id}
-                          onChange={(e) => changeRole.mutate({ userId: u.id, roleId: e.target.value })}
+                          onChange={(e) => changeRole.mutate({ userId: u.contactId ?? u.id, roleId: e.target.value })}
                           disabled={changeRole.isPending}
                         >
                           {roleList.length > 0
@@ -142,7 +142,7 @@ export const UserManagementPage = () => {
                         <IconButton
                           size="small"
                           color="error"
-                          onClick={() => setConfirmDelete({ id: u.id, name: `${u.firstName} ${u.lastName}` })}
+                          onClick={() => setConfirmDelete({ id: u.contactId ?? u.id, name: `${u.firstName} ${u.lastName}` })}
                         >
                           <DeleteIcon fontSize="small" />
                         </IconButton>

@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq } from 'drizzle-orm';
 import { roleAssignments } from '@b2b/db';
 import type { Buyer, Permission, Role } from '@b2b/domain';
 import { NotFoundError, isPermission } from '@b2b/domain';
@@ -108,6 +107,7 @@ userRoutes.get('/users', async (c) => {
     };
     return {
       id: node.customer.id,
+      contactId: node.id,
       email: node.customer.email ?? '',
       firstName: node.customer.firstName ?? '',
       lastName: node.customer.lastName ?? '',
@@ -181,34 +181,59 @@ userRoutes.post('/users', zValidator('json', inviteSchema), async (c) => {
 });
 
 const assignSchema = z.object({ roleId: z.string().min(1) });
+// The `:id` segment is the Shopify CompanyContact GID (Buyer.contactId
+// on the wire), not the underlying customer GID. B2B contact mutations
+// operate on the contact, not the customer.
 userRoutes.patch('/users/:id', zValidator('json', assignSchema), async (c) => {
   const auth = c.var.auth!;
-  const buyerId = c.req.param('id');
+  const contactId = c.req.param('id');
   const { roleId } = c.req.valid('json');
-  // Shopify mutation: companyContactRoleAssignmentReplace
-  await adminQuery(
+  const locationId = auth.location?.shopifyLocationGid ?? auth.company.locations[0]?.shopifyLocationGid;
+  if (!locationId) throw new NotFoundError('users.assignRole', 'no-company-location');
+  const result = await adminQuery<{
+    companyContactAssignRole: { userErrors: { message: string }[] };
+  }>(
     `mutation Assign($contactId: ID!, $roleId: ID!, $locationId: ID!) {
-       companyContactRoleAssignmentCreate(
+       companyContactAssignRole(
          companyContactId: $contactId,
-         roleAssignment: { companyContactRoleId: $roleId, companyLocationId: $locationId }
+         companyContactRoleId: $roleId,
+         companyLocationId: $locationId
        ) { userErrors { message } }
      }`,
-    {
-      contactId: buyerId,
-      roleId,
-      locationId: auth.location?.shopifyLocationGid ?? auth.company.locations[0]?.shopifyLocationGid,
-    },
+    { contactId, roleId, locationId },
   );
+  if (result.companyContactAssignRole.userErrors.length) {
+    throw new NotFoundError(
+      'users.assignRole',
+      result.companyContactAssignRole.userErrors.map((e) => e.message).join('; '),
+    );
+  }
   return c.body(null, 204);
 });
 
 userRoutes.delete('/users/:id', async (c) => {
-  const buyerId = c.req.param('id');
-  await adminQuery(
-    `mutation Remove($id: ID!) { companyContactDelete(id: $id) { userErrors { message } } }`,
-    { id: buyerId },
+  const contactId = c.req.param('id');
+  const result = await adminQuery<{
+    companyContactDelete: { deletedCompanyContactId?: string | null; userErrors: { message: string }[] };
+  }>(
+    `mutation Remove($contactId: ID!) {
+       companyContactDelete(companyContactId: $contactId) {
+         deletedCompanyContactId
+         userErrors { message }
+       }
+     }`,
+    { contactId },
   );
-  // Also drop their portal grants.
-  await c.var.db.delete(roleAssignments).where(eq(roleAssignments.buyerId, buyerId));
+  if (result.companyContactDelete.userErrors.length) {
+    throw new NotFoundError(
+      'users.remove',
+      result.companyContactDelete.userErrors.map((e) => e.message).join('; '),
+    );
+  }
+  // Portal grants (role_assignments) are keyed by the customer GID,
+  // which we don't have here. Stale rows are harmless — GET /users
+  // intersects them with current company contacts before display —
+  // and they intentionally re-apply if the same customer is later
+  // re-added to the company.
   return c.body(null, 204);
 });
