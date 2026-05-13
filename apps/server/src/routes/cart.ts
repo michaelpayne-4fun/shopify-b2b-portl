@@ -3,56 +3,23 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { ValidationError } from '@b2b/domain';
 import {
-  CART_CREATE_MUTATION, CART_LINES_ADD_MUTATION,
+  CART_LINES_ADD_MUTATION,
   CART_LINES_REMOVE_MUTATION, CART_LINES_UPDATE_MUTATION,
-  CART_QUERY, renderCartQuery,
+  renderCartQuery,
 } from '../shopify/queries';
 import { storefrontQuery } from '../shopify/storefrontClient';
 import { checkoutUrlOf, mapShopifyCart, type ShopifyCartResponse } from '../shopify/mappers/cartMapper';
 import type { AppVariables } from '../middleware/types';
-import { clearCartId, getCartId, setCartId } from '../portal/cart/cartStore';
+import { clearCartId, getCartId } from '../portal/cart/cartStore';
+import { ensureCart as _ensureCart } from '../portal/cart/ensureCart';
 
 export const cartRoutes = new Hono<{ Variables: AppVariables }>();
 
-interface CartCreateData { cartCreate: { cart: ShopifyCartResponse; userErrors: { field?: string[]; message: string }[] } }
 interface CartLinesAddData { cartLinesAdd: { cart: ShopifyCartResponse; userErrors: { field?: string[]; message: string }[] } }
 interface CartLinesUpdateData { cartLinesUpdate: { cart: ShopifyCartResponse; userErrors: { field?: string[]; message: string }[] } }
 interface CartLinesRemoveData { cartLinesRemove: { cart: ShopifyCartResponse; userErrors: { field?: string[]; message: string }[] } }
-interface CartFetchData { cart: ShopifyCartResponse | null }
 
-const ensureCart = async (
-  db: Parameters<typeof getCartId>[0],
-  sessionId: string,
-  buyerAccessToken: string,
-  companyLocationId: string | undefined,
-): Promise<ShopifyCartResponse> => {
-  const existing = await getCartId(db, sessionId);
-  if (existing) {
-    const fetched = await storefrontQuery<CartFetchData>(
-      renderCartQuery(CART_QUERY),
-      { id: existing },
-      { buyerAccessToken },
-    );
-    if (fetched.cart) return fetched.cart;
-    await clearCartId(db, sessionId);
-  }
-  const result = await storefrontQuery<CartCreateData>(
-    renderCartQuery(CART_CREATE_MUTATION),
-    {
-      input: {
-        buyerIdentity: companyLocationId
-            ? { companyLocationId, customerAccessToken: buyerAccessToken }
-            : { customerAccessToken: buyerAccessToken },
-      },
-    },
-    { buyerAccessToken },
-  );
-  if (result.cartCreate.userErrors.length) {
-    throw new ValidationError(result.cartCreate.userErrors.map((e) => e.message).join('; '));
-  }
-  await setCartId(db, sessionId, result.cartCreate.cart.id);
-  return result.cartCreate.cart;
-};
+const ensureCart = _ensureCart;
 
 cartRoutes.get('/cart', async (c) => {
   const auth = c.var.auth!;

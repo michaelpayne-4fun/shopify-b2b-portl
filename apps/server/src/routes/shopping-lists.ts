@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
+import { ValidationError } from '@b2b/domain';
 import { requireFeatureFlag, requirePermission } from '../middleware/authz';
 import type { AppVariables } from '../middleware/types';
 import {
@@ -8,6 +9,10 @@ import {
   listShoppingLists, removeItem, updateShoppingList,
 } from '../portal/shoppingLists/shoppingListService';
 import { getCompanySettings } from '../portal/admin/companySettings';
+import { ensureCart } from '../portal/cart/ensureCart';
+import { CART_LINES_ADD_MUTATION, renderCartQuery } from '../shopify/queries';
+import { storefrontQuery } from '../shopify/storefrontClient';
+import { mapShopifyCart, type ShopifyCartResponse } from '../shopify/mappers/cartMapper';
 
 export const shoppingListRoutes = new Hono<{ Variables: AppVariables }>();
 shoppingListRoutes.use('*', requireFeatureFlag('shoppingLists'));
@@ -83,7 +88,64 @@ shoppingListRoutes.delete(
   },
 );
 
-shoppingListRoutes.post('/shopping-lists/:id/add-to-cart', requirePermission('cart.update'), async () => {
-  // v1: returns a placeholder. Wire to cart.ts addItem in a follow-up.
-  return Response.json({ cartId: 'pending-cart-id' });
+shoppingListRoutes.post('/shopping-lists/:id/add-to-cart', requirePermission('cart.update'), async (c) => {
+  const auth = c.var.auth!;
+  const list = await getShoppingList(c.var.db, c.req.param('id'));
+
+  if (list.items.length === 0) {
+    throw new ValidationError('Shopping list has no items');
+  }
+
+  // Resolve any items that don't have a variantId stored — look up by SKU via Storefront.
+  const resolvedLines: { merchandiseId: string; quantity: number }[] = [];
+  const skuLookupNeeded = list.items.filter((it) => !it.variantId);
+  const variantMap = new Map<string, string>(); // sku -> variantId
+
+  if (skuLookupNeeded.length > 0) {
+    // Batch resolve: one query per SKU (Storefront doesn't support multi-sku bulk lookup cheaply)
+    await Promise.all(
+      skuLookupNeeded.map(async (it) => {
+        const res = await storefrontQuery<{
+          products: { edges: Array<{ node: { variants: { edges: Array<{ node: { id: string } }> } } }> };
+        }>(
+          `query Sku($q: String!) { products(query: $q, first: 1) { edges { node { variants(first: 1) { edges { node { id } } } } } } }`,
+          { q: `sku:${it.sku}` },
+          { buyerAccessToken: auth.caaAccessToken },
+        );
+        const vid = res.products.edges[0]?.node.variants.edges[0]?.node.id;
+        if (vid) variantMap.set(it.sku, vid);
+      }),
+    );
+  }
+
+  // Build the lines array; skip items whose SKU couldn't be resolved.
+  const skipped: string[] = [];
+  for (const it of list.items) {
+    const variantId = it.variantId ?? variantMap.get(it.sku);
+    if (!variantId) { skipped.push(it.sku); continue; }
+    resolvedLines.push({ merchandiseId: variantId, quantity: it.quantity });
+  }
+
+  if (resolvedLines.length === 0) {
+    throw new ValidationError(
+      `None of the SKUs in this list could be resolved: ${skipped.join(', ')}`,
+    );
+  }
+
+  interface CartLinesAddData { cartLinesAdd: { cart: ShopifyCartResponse; userErrors: { field?: string[]; message: string }[] } }
+  const cart = await ensureCart(c.var.db, auth.sessionId, auth.caaAccessToken, auth.location?.shopifyLocationGid);
+  const result = await storefrontQuery<CartLinesAddData>(
+    renderCartQuery(CART_LINES_ADD_MUTATION),
+    { cartId: cart.id, lines: resolvedLines },
+    { buyerAccessToken: auth.caaAccessToken },
+  );
+  if (result.cartLinesAdd.userErrors.length) {
+    throw new ValidationError(result.cartLinesAdd.userErrors.map((e) => e.message).join('; '));
+  }
+
+  const response = c.json(mapShopifyCart(result.cartLinesAdd.cart));
+  if (skipped.length > 0) {
+    response.headers.set('X-Warning', `SKUs not found in catalog: ${skipped.join(', ')}`);
+  }
+  return response;
 });
