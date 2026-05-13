@@ -31,6 +31,10 @@ export interface Order {
   poNumber?: string;
   lines: OrderLine[];
   subtotal: Money;
+  shipping?: Money;
+  tax?: Money;
+  refunded?: Money;
+  duties?: Money;
   total: Money;
   shippingAddress?: Address;
   billingAddress?: Address;

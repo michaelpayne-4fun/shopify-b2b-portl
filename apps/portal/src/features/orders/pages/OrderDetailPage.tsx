@@ -74,7 +74,9 @@ export const OrderDetailPage = () => {
                 <TableRow key={l.id}>
                   <TableCell>
                     <Typography>{l.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{l.sku}</Typography>
+                    {l.sku ? (
+                      <Typography variant="caption" color="text.secondary">{l.sku}</Typography>
+                    ) : null}
                   </TableCell>
                   <TableCell align="right">{l.quantity}</TableCell>
                   <TableCell align="right"><Money value={l.unitPrice} /></TableCell>
@@ -83,6 +85,40 @@ export const OrderDetailPage = () => {
               ))}
             </TableBody>
           </Table>
+          <Stack spacing={0.5} sx={{ mt: 2, ml: 'auto', maxWidth: 280 }}>
+            <Stack direction="row" justifyContent="space-between">
+              <Typography variant="body2" color="text.secondary">Subtotal</Typography>
+              <Typography variant="body2"><Money value={o.subtotal} /></Typography>
+            </Stack>
+            {o.shipping ? (
+              <Stack direction="row" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">Shipping</Typography>
+                <Typography variant="body2"><Money value={o.shipping} /></Typography>
+              </Stack>
+            ) : null}
+            {o.tax ? (
+              <Stack direction="row" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">Tax</Typography>
+                <Typography variant="body2"><Money value={o.tax} /></Typography>
+              </Stack>
+            ) : null}
+            {o.duties ? (
+              <Stack direction="row" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">Duties</Typography>
+                <Typography variant="body2"><Money value={o.duties} /></Typography>
+              </Stack>
+            ) : null}
+            <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.5, borderTop: 1, borderColor: 'divider' }}>
+              <Typography variant="subtitle2">Total</Typography>
+              <Typography variant="subtitle2"><Money value={o.total} /></Typography>
+            </Stack>
+            {o.refunded ? (
+              <Stack direction="row" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">Refunded</Typography>
+                <Typography variant="body2" color="text.secondary">−<Money value={o.refunded} /></Typography>
+              </Stack>
+            ) : null}
+          </Stack>
         </CardContent></Card>
       </Stack>
     </>

@@ -32,14 +32,19 @@ export const createCartFromLines = async (args: {
   if (args.lines.length === 0) {
     throw new ValidationError('Cannot create cart with zero lines');
   }
+  // Shopify Storefront requires customerAccessToken inside buyerIdentity
+  // whenever companyLocationId is set (B2B carts). Same fix as 31bbf35
+  // applied to ensureCart; without it, cartCreate userErrors with
+  // "The customer access token is required when setting a company
+  // location" and reorder 500s.
   const result = await storefrontQuery<CartCreateData>(
     renderCartQuery(CART_CREATE_MUTATION),
     {
       input: {
         lines: args.lines,
         buyerIdentity: args.companyLocationGid
-          ? { companyLocationId: args.companyLocationGid }
-          : undefined,
+          ? { companyLocationId: args.companyLocationGid, customerAccessToken: args.buyerAccessToken }
+          : { customerAccessToken: args.buyerAccessToken },
       },
     },
     { buyerAccessToken: args.buyerAccessToken },

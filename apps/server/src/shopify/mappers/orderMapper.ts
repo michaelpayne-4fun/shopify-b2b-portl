@@ -1,6 +1,8 @@
 import type { Order, OrderLine, OrderStatus } from '@b2b/domain';
 import { mapShopifyAddress, type ShopifyMailingAddress } from './addressMapper';
 
+type MoneySet = { presentmentMoney: { amount: string; currencyCode: string } };
+
 export interface ShopifyOrderNode {
   id: string;
   name: string;
@@ -9,8 +11,12 @@ export interface ShopifyOrderNode {
   financialStatus?: string | null;
   poNumber?: string | null;
   customerJourney?: { customerOrderId?: string } | null;
-  totalPriceSet: { presentmentMoney: { amount: string; currencyCode: string } };
-  subtotalPriceSet: { presentmentMoney: { amount: string; currencyCode: string } };
+  totalPriceSet: MoneySet;
+  subtotalPriceSet: MoneySet;
+  totalShippingPriceSet?: MoneySet | null;
+  totalTaxSet?: MoneySet | null;
+  totalRefundedSet?: MoneySet | null;
+  totalDutiesSet?: MoneySet | null;
   lineItems: {
     edges: Array<{
       node: {
@@ -19,8 +25,8 @@ export interface ShopifyOrderNode {
         title: string;
         quantity: number;
         variant?: { id: string } | null;
-        originalUnitPriceSet: { presentmentMoney: { amount: string; currencyCode: string } };
-        originalTotalSet: { presentmentMoney: { amount: string; currencyCode: string } };
+        originalUnitPriceSet: MoneySet;
+        originalTotalSet: MoneySet;
       };
     }>;
   };
@@ -70,6 +76,16 @@ const toLine = (
   };
 };
 
+const moneyOrUndefined = (
+  s: MoneySet | null | undefined,
+  currency: string,
+): { amount: number; currency: string } | undefined => {
+  if (!s) return undefined;
+  const amount = Number(s.presentmentMoney.amount);
+  if (!Number.isFinite(amount) || amount === 0) return undefined;
+  return { amount, currency: s.presentmentMoney.currencyCode || currency };
+};
+
 export const mapShopifyOrder = (raw: ShopifyOrderNode): Order => {
   const currency = raw.totalPriceSet.presentmentMoney.currencyCode;
   return {
@@ -82,6 +98,10 @@ export const mapShopifyOrder = (raw: ShopifyOrderNode): Order => {
     locationId: raw.purchasingEntity?.location?.id,
     poNumber: raw.poNumber ?? undefined,
     subtotal: { amount: Number(raw.subtotalPriceSet.presentmentMoney.amount), currency },
+    shipping: moneyOrUndefined(raw.totalShippingPriceSet, currency),
+    tax: moneyOrUndefined(raw.totalTaxSet, currency),
+    refunded: moneyOrUndefined(raw.totalRefundedSet, currency),
+    duties: moneyOrUndefined(raw.totalDutiesSet, currency),
     total: { amount: Number(raw.totalPriceSet.presentmentMoney.amount), currency },
     lines: raw.lineItems.edges.map((e) => toLine(e.node)),
     shippingAddress: raw.shippingAddress

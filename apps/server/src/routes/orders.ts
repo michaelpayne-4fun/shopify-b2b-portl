@@ -27,7 +27,7 @@ interface CaaLineItem {
   quantity: number;
   variantId?: string | null;
   currentTotalPrice?: CaaMoney | null;
-  unitPrice?: { price: CaaMoney } | null;
+  totalPrice?: CaaMoney | null;
 }
 
 interface CaaOrderNode {
@@ -38,6 +38,10 @@ interface CaaOrderNode {
   fulfillmentStatus?: string | null;
   totalPrice: CaaMoney;
   subtotal?: CaaMoney | null;
+  totalShipping?: CaaMoney | null;
+  totalTax?: CaaMoney | null;
+  totalRefunded?: CaaMoney | null;
+  totalDuties?: CaaMoney | null;
   lineItems: { edges: Array<{ node: CaaLineItem }> };
   shippingAddress?: {
     firstName?: string | null; lastName?: string | null;
@@ -54,7 +58,8 @@ interface CaaOrderNode {
 }
 
 const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
-  const toMoney = (m: CaaMoney) => ({ presentmentMoney: m });
+  const toMoneySet = (m: CaaMoney | null | undefined): { presentmentMoney: CaaMoney } | null =>
+    m ? { presentmentMoney: m } : null;
   const currency = caa.totalPrice.currencyCode;
   const zero: CaaMoney = { amount: '0', currencyCode: currency };
   return {
@@ -63,14 +68,22 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
     processedAt: caa.processedAt,
     financialStatus: caa.financialStatus ?? null,
     fulfillmentStatus: caa.fulfillmentStatus ?? null,
-    totalPriceSet: toMoney(caa.totalPrice),
-    subtotalPriceSet: toMoney(caa.subtotal ?? zero),
+    totalPriceSet: { presentmentMoney: caa.totalPrice },
+    subtotalPriceSet: { presentmentMoney: caa.subtotal ?? zero },
+    totalShippingPriceSet: toMoneySet(caa.totalShipping),
+    totalTaxSet: toMoneySet(caa.totalTax),
+    totalRefundedSet: toMoneySet(caa.totalRefunded),
+    totalDutiesSet: toMoneySet(caa.totalDuties),
     lineItems: {
       edges: caa.lineItems.edges.map(({ node }) => {
-        const unit = node.unitPrice?.price ?? zero;
-        const total = node.currentTotalPrice ?? {
-          amount: String(Number(unit.amount) * node.quantity),
-          currencyCode: unit.currencyCode,
+        // CAA's LineItem exposes line totals (currentTotalPrice /
+        // totalPrice) but no per-unit price field. Derive unit price
+        // by dividing the line total by quantity.
+        const lineTotal = node.currentTotalPrice ?? node.totalPrice ?? zero;
+        const qty = Math.max(1, node.quantity);
+        const unit: CaaMoney = {
+          amount: String(Number(lineTotal.amount) / qty),
+          currencyCode: lineTotal.currencyCode,
         };
         return {
           node: {
@@ -82,8 +95,8 @@ const normalizeCaaOrder = (caa: CaaOrderNode): ShopifyOrderNode => {
             // resolve full variant detail when needed.
             sku: null,
             variant: node.variantId ? { id: node.variantId } : null,
-            originalUnitPriceSet: toMoney(unit),
-            originalTotalSet: toMoney(total),
+            originalUnitPriceSet: { presentmentMoney: unit },
+            originalTotalSet: { presentmentMoney: lineTotal },
           },
         };
       }),
@@ -118,12 +131,16 @@ const CAA_ORDER_FIELDS = `
   id name processedAt fulfillmentStatus financialStatus
   totalPrice { amount currencyCode }
   subtotal { amount currencyCode }
+  totalShipping { amount currencyCode }
+  totalTax { amount currencyCode }
+  totalRefunded { amount currencyCode }
+  totalDuties { amount currencyCode }
   lineItems(first: 50) {
     edges {
       node {
         id name quantity variantId
         currentTotalPrice { amount currencyCode }
-        unitPrice { price { amount currencyCode } }
+        totalPrice { amount currencyCode }
       }
     }
   }
@@ -144,6 +161,9 @@ const ADMIN_ORDER_FIELDS = `
   financialStatus: displayFinancialStatus
   totalPriceSet { presentmentMoney { amount currencyCode } }
   subtotalPriceSet { presentmentMoney { amount currencyCode } }
+  totalShippingPriceSet { presentmentMoney { amount currencyCode } }
+  totalTaxSet { presentmentMoney { amount currencyCode } }
+  totalRefundedSet { presentmentMoney { amount currencyCode } }
   lineItems(first: 50) {
     edges {
       node {
