@@ -10,6 +10,13 @@ export interface Page<T> {
   pageSize: number;
   totalItems: number;
   totalPages: number;
+  /**
+   * Optional, machine-readable hint about a soft failure that
+   * shouldn't block the page from rendering — e.g. an upstream scope
+   * being unavailable so the list was returned empty. The portal maps
+   * these to a friendly Alert.
+   */
+  warning?: 'scope-missing';
 }
 
 export const emptyPage = <T>(): Page<T> => ({

@@ -44,7 +44,7 @@ export const RoleGrantsPage = () => {
         description="Augment Shopify's coarse role with portal-only permissions."
       />
 
-      {users.error && (
+      {(users.error || users.data?.warning === 'scope-missing') && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           Could not load company contacts — the Shopify app may be missing the{' '}
           <strong>read_customers</strong> scope. Add it in the Shopify Partner Dashboard then
@@ -52,7 +52,7 @@ export const RoleGrantsPage = () => {
         </Alert>
       )}
 
-      {!users.error && userList.length === 0 && !users.isLoading && (
+      {!users.error && users.data?.warning !== 'scope-missing' && userList.length === 0 && !users.isLoading && (
         <Alert severity="info" sx={{ mb: 2 }}>
           No company contacts found. Contacts will appear here once buyers are added to your
           company in Shopify.

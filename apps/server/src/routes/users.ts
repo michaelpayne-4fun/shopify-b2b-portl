@@ -115,11 +115,17 @@ userRoutes.get('/users', async (c) => {
     };
   });
 
-  const res = c.json({ items, page: 1, pageSize: items.length, totalItems: items.length, totalPages: 1 });
-  if (scopeWarning) {
-    res.headers.set('X-Warning', 'read_customers scope not granted — user list unavailable');
-  }
-  return res;
+  return c.json({
+    items,
+    page: 1,
+    pageSize: items.length,
+    totalItems: items.length,
+    totalPages: 1,
+    // When the read_customers scope is missing, items is empty and the
+    // portal renders a "scope missing" Alert based on this hint instead
+    // of the generic empty-state copy.
+    ...(scopeWarning ? { warning: 'scope-missing' as const } : {}),
+  });
 });
 
 const COMPANY_ROLES_QUERY = `

@@ -50,8 +50,10 @@ export const UserManagementPage = () => {
   });
 
   if (users.isLoading) return <LoadingState />;
-  // Show warning instead of full error (scope may be missing)
-  const scopeMissing = !!users.error;
+  // The server now degrades to a 200 with `warning: 'scope-missing'`
+  // when read_customers isn't granted, so we key on that instead of
+  // `users.error` (which would only be set on a hard failure).
+  const scopeMissing = users.data?.warning === 'scope-missing' || !!users.error;
   const items = users.data?.items ?? [];
   const roleList = roles.data ?? [];
 
