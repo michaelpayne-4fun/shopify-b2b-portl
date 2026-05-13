@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+// z.coerce.boolean() converts string "false" -> true (Boolean("false") === true).
+// Use this custom transform instead for env-var booleans.
+const booleanFromEnv = (defaultVal: boolean) =>
+  z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (v === undefined || v === '') return defaultVal;
+      return !['false', '0', 'no', 'off'].includes(v.toLowerCase());
+    });
+
 const schema = z.object({
   PORT: z.coerce.number().default(8787),
   PUBLIC_PORTAL_URL: z.string().url().default('http://localhost:3000'),
@@ -17,11 +28,11 @@ const schema = z.object({
   SHOPIFY_CAA_CLIENT_SECRET: z.string().optional(),
   SHOPIFY_CAA_REDIRECT_URI: z.string().url(),
 
-  FEATURE_QUOTES: z.coerce.boolean().default(true),
-  FEATURE_APPROVALS: z.coerce.boolean().default(false),
-  FEATURE_SHOPPING_LISTS: z.coerce.boolean().default(true),
-  FEATURE_INVOICES: z.coerce.boolean().default(false),
-  FEATURE_MULTI_TIER_HIERARCHY: z.coerce.boolean().default(false),
+  FEATURE_QUOTES: booleanFromEnv(true),
+  FEATURE_APPROVALS: booleanFromEnv(false),
+  FEATURE_SHOPPING_LISTS: booleanFromEnv(true),
+  FEATURE_INVOICES: booleanFromEnv(false),
+  FEATURE_MULTI_TIER_HIERARCHY: booleanFromEnv(false),
 });
 
 export type Env = z.infer<typeof schema>;
