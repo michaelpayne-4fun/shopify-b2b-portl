@@ -32,8 +32,8 @@ const ORDER_FIELDS = `
       }
     }
   }
-  shippingAddress { firstName lastName company address1 address2 city provinceCode zip countryCode phone }
-  billingAddress { firstName lastName company address1 address2 city provinceCode zip countryCode phone }
+  shippingAddress { firstName lastName company address1 address2 city zoneCode zip territoryCode phoneNumber }
+  billingAddress { firstName lastName company address1 address2 city zoneCode zip territoryCode phoneNumber }
   purchasingEntity { __typename ... on PurchasingCompany { company { id } location { id } } }
   customer { id }
 `;

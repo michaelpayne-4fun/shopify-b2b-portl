@@ -30,8 +30,8 @@ export const COMPANY_FOR_CUSTOMER_QUERY = `
                     id
                     name
                     shippingAddress {
-                      firstName lastName company address1 address2
-                      city provinceCode zip countryCode phone
+                      firstName lastName address1 address2
+                      city zoneCode zip countryCode phone
                     }
                     roleAssignments(first: 50) {
                       edges {

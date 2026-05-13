@@ -5,13 +5,17 @@ export interface ShopifyMailingAddress {
   firstName?: string | null;
   lastName?: string | null;
   company?: string | null;
+  companyName?: string | null;
   address1?: string | null;
   address2?: string | null;
   city?: string | null;
   provinceCode?: string | null;
+  zoneCode?: string | null;
   zip?: string | null;
   countryCode?: string | null;
+  territoryCode?: string | null;
   phone?: string | null;
+  phoneNumber?: string | null;
 }
 
 export const mapShopifyAddress = (
@@ -23,14 +27,14 @@ export const mapShopifyAddress = (
   label: opts.label,
   firstName: raw.firstName ?? '',
   lastName: raw.lastName ?? '',
-  company: raw.company ?? undefined,
+  company: raw.company ?? raw.companyName ?? undefined,
   line1: raw.address1 ?? '',
   line2: raw.address2 ?? undefined,
   city: raw.city ?? '',
-  region: raw.provinceCode ?? '',
+  region: raw.zoneCode ?? raw.provinceCode ?? '',
   postalCode: raw.zip ?? '',
-  countryCode: raw.countryCode ?? '',
-  phone: raw.phone ?? undefined,
+  countryCode: raw.countryCode ?? raw.territoryCode ?? '',
+  phone: raw.phone ?? raw.phoneNumber ?? undefined,
   isDefaultBilling: opts.isDefaultBilling,
   isDefaultShipping: opts.isDefaultShipping,
 });
