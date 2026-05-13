@@ -32,10 +32,10 @@ export const generatePkcePair = (): { codeVerifier: string; codeChallenge: strin
 export const generateState = (): string => base64UrlEncode(randomBytes(16));
 
 const authorizeUrl = (): string =>
-  `https://shopify.com/authentication/${env().SHOPIFY_SHOP_DOMAIN}/oauth/authorize`;
+  `https://shopify.com/${env().SHOPIFY_STORE_ID}/auth/oauth/authorize`;
 
 const tokenUrl = (): string =>
-  `https://shopify.com/authentication/${env().SHOPIFY_SHOP_DOMAIN}/oauth/token`;
+  `https://shopify.com/${env().SHOPIFY_STORE_ID}/auth/oauth/token`;
 
 export interface AuthorizeUrlInput {
   state: string;

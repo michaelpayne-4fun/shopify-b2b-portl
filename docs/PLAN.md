@@ -206,6 +206,7 @@ fly secrets set \
   DATABASE_URL="postgres://...neon.tech/...?sslmode=require" \
   PUBLIC_PORTAL_URL="<prod-url>" \
   SHOPIFY_SHOP_DOMAIN="<shop>.myshopify.com" \
+  SHOPIFY_STORE_ID="<numeric-store-id>" \
   SHOPIFY_CLIENT_ID="<app-client-id>" \
   SHOPIFY_CLIENT_SECRET="<app-client-secret>" \
   SHOPIFY_STOREFRONT_ACCESS_TOKEN="<storefront-token>" \

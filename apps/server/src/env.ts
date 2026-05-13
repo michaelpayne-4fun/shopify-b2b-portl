@@ -7,6 +7,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
 
   SHOPIFY_SHOP_DOMAIN: z.string().min(1),
+  SHOPIFY_STORE_ID: z.string().min(1),
   SHOPIFY_CLIENT_ID: z.string().min(1),
   SHOPIFY_CLIENT_SECRET: z.string().min(1),
   SHOPIFY_STOREFRONT_ACCESS_TOKEN: z.string().min(1),
