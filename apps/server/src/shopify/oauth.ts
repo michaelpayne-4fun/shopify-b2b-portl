@@ -31,11 +31,16 @@ export const generatePkcePair = (): { codeVerifier: string; codeChallenge: strin
 
 export const generateState = (): string => base64UrlEncode(randomBytes(16));
 
+const STORE_ID = '98578891115';
+
 const authorizeUrl = (): string =>
-  `https://shopify.com/${env().SHOPIFY_STORE_ID}/auth/oauth/authorize`;
+  `https://shopify.com/${STORE_ID}/auth/oauth/authorize`;
 
 const tokenUrl = (): string =>
-  `https://shopify.com/${env().SHOPIFY_STORE_ID}/auth/oauth/token`;
+  `https://shopify.com/${STORE_ID}/auth/oauth/token`;
+
+const revokeUrl = (): string =>
+  `https://shopify.com/${STORE_ID}/auth/oauth/revoke`;
 
 export interface AuthorizeUrlInput {
   state: string;
@@ -104,4 +109,19 @@ export const refreshAccessToken = async (refreshToken: string): Promise<TokenRes
     throw new Error(`Refresh failed: ${res.status} ${text}`);
   }
   return (await res.json()) as TokenResponse;
+};
+
+export const revokeToken = async (token: string): Promise<void> => {
+  const body = new URLSearchParams({
+    token,
+    client_id: env().SHOPIFY_CAA_CLIENT_ID,
+  });
+  if (env().SHOPIFY_CAA_CLIENT_SECRET) {
+    body.set('client_secret', env().SHOPIFY_CAA_CLIENT_SECRET!);
+  }
+  await fetch(revokeUrl(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
 };
