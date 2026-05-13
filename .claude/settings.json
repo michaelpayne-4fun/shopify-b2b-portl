@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e 'const i=JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"));const c=((i.tool_input||{}).command||\"\").trimStart();if(/^git\\s+(push|commit)\\b/.test(c)&&/\\s--no-verify\\b/.test(c)){console.error(\"Hard rule (CLAUDE.md): no --no-verify on git push/commit. Fix the failing gate instead.\");process.exit(2);}'"
+          }
+        ]
+      }
+    ]
+  }
+}
