@@ -32,3 +32,12 @@ export interface AddCartItemInput {
   variantId?: string;
   quantity: number;
 }
+
+export interface BulkAddCartItem {
+  variantId: string;
+  quantity: number;
+}
+
+export interface BulkAddCartItemsInput {
+  items: BulkAddCartItem[];
+}

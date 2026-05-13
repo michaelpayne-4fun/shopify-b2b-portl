@@ -94,6 +94,32 @@ cartRoutes.post('/cart/items', zValidator('json', addItemSchema), async (c) => {
   return c.json(mapShopifyCart(result.cartLinesAdd.cart));
 });
 
+const addItemsSchema = z.object({
+  items: z.array(z.object({
+    variantId: z.string().min(1),
+    quantity: z.number().int().positive(),
+  })).min(1).max(100),
+});
+
+cartRoutes.post('/cart/items/bulk', zValidator('json', addItemsSchema), async (c) => {
+  const auth = c.var.auth!;
+  const { items } = c.req.valid('json');
+  const cart = await ensureCart(c.var.db, auth.sessionId, auth.caaAccessToken, auth.location?.shopifyLocationGid);
+
+  const result = await storefrontQuery<CartLinesAddData>(
+    renderCartQuery(CART_LINES_ADD_MUTATION),
+    {
+      cartId: cart.id,
+      lines: items.map((i) => ({ merchandiseId: i.variantId, quantity: i.quantity })),
+    },
+    { buyerAccessToken: auth.caaAccessToken },
+  );
+  if (result.cartLinesAdd.userErrors.length) {
+    throw new ValidationError(result.cartLinesAdd.userErrors.map((e) => e.message).join('; '));
+  }
+  return c.json(mapShopifyCart(result.cartLinesAdd.cart));
+});
+
 const updateSchema = z.object({ quantity: z.number().int().nonnegative() });
 
 cartRoutes.patch('/cart/items/:id', zValidator('json', updateSchema), async (c) => {

@@ -1,183 +1,273 @@
 import {
-  Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, CircularProgress,
-  Stack, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Divider, Paper, Stack, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import type { Product, ProductVariant } from '@b2b/domain';
-import { getProductBySku, searchProducts } from '@/services/catalogService';
-import { addToCart } from '@/services/cartService';
+import AddIcon from '@mui/icons-material/Add';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { BulkAddCartItem, Money } from '@b2b/domain';
+import { addManyToCart } from '@/services/cartService';
 import { queryKeys } from '@/state/queries/queryKeys';
 import { PageHeader } from '@/ui/components/PageHeader';
-import { Money } from '@/ui/components/Money';
+import { Money as MoneyView } from '@/ui/components/Money';
+import { QuickOrderRow, type QuickOrderRowSnapshot } from '../components/QuickOrderRow';
 
-interface VariantOption {
-  product: Product;
-  variant: ProductVariant;
+interface RowEntry {
+  key: string;
+  initialInput?: string;
+  initialQuantity?: number;
 }
 
-const variantLabel = (p: Product, v: ProductVariant): string => {
-  const attrs = Object.values(v.attributes ?? {}).filter(Boolean).join(' / ');
-  return attrs ? `${p.name} — ${attrs}` : p.name;
+interface ParsedRow {
+  sku: string;
+  quantity: number;
+}
+
+const newKey = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+
+const emptyRow = (): RowEntry => ({ key: newKey() });
+
+const parseClipboardCsv = (text: string): ParsedRow[] => {
+  const rows: ParsedRow[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const cols = line.split(/[,\t;]/).map((s) => s.trim().replace(/^"(.*)"$/, '$1'));
+    const sku = cols[0];
+    if (!sku) continue;
+    if (/^sku$/i.test(sku)) continue; // skip header
+    const qty = Math.max(1, parseInt(cols[1] ?? '1', 10) || 1);
+    rows.push({ sku, quantity: qty });
+  }
+  return rows;
 };
 
 export const QuickOrderPage = () => {
   const qc = useQueryClient();
-  const [input, setInput] = useState('');
-  const [debouncedInput, setDebouncedInput] = useState('');
-  const [quantity, setQuantity] = useState(1);
-  const [product, setProduct] = useState<Product | null>(null);
-  const [variant, setVariant] = useState<ProductVariant | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<RowEntry[]>([emptyRow()]);
+  const [snapshots, setSnapshots] = useState<Record<string, QuickOrderRowSnapshot>>({});
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedInput(input.trim()), 250);
-    return () => clearTimeout(t);
-  }, [input]);
+  const handleSnapshot = useCallback((snap: QuickOrderRowSnapshot) => {
+    setSnapshots((prev) => {
+      const existing = prev[snap.key];
+      if (
+        existing &&
+        existing.status === snap.status &&
+        existing.variantId === snap.variantId &&
+        existing.quantity === snap.quantity &&
+        existing.errorMessage === snap.errorMessage
+      ) return prev;
+      return { ...prev, [snap.key]: snap };
+    });
+  }, []);
 
-  const search = useQuery({
-    queryKey: queryKeys.catalog.search(debouncedInput),
-    queryFn: () => searchProducts(debouncedInput, 10),
-    enabled: debouncedInput.length > 0,
-    staleTime: 30_000,
-  });
+  const addRow = () => setRows((rs) => [...rs, emptyRow()]);
 
-  const lookup = useMutation({
-    mutationFn: (s: string) => getProductBySku(s),
-    onSuccess: (p) => {
-      setProduct(p);
-      const v = p.variants[0] ?? null;
-      setVariant(v);
-      if (v?.minOrderQty) setQuantity(v.minOrderQty);
-    },
-    onError: () => {
-      setProduct(null);
-      setVariant(null);
-    },
-  });
+  const removeRow = (key: string) =>
+    setRows((rs) => {
+      const next = rs.filter((r) => r.key !== key);
+      return next.length === 0 ? [emptyRow()] : next;
+    });
 
-  const add = useMutation({
-    mutationFn: () => {
-      if (!variant) return Promise.reject(new Error('No product selected'));
-      return addToCart({ sku: variant.sku, variantId: variant.id, quantity });
-    },
-    onSuccess: (cart) => qc.setQueryData(queryKeys.cart, cart),
-  });
-
-  const options = useMemo<VariantOption[]>(() => {
-    const items = search.data?.items ?? [];
-    return items.flatMap((p) => p.variants.map((v) => ({ product: p, variant: v })));
-  }, [search.data]);
-
-  const handleSelect = (opt: VariantOption | string | null) => {
-    if (opt == null) {
-      setProduct(null);
-      setVariant(null);
+  const ingestParsed = (parsed: ParsedRow[]) => {
+    if (parsed.length === 0) {
+      setFeedback({ kind: 'info', text: 'No rows found in clipboard. Use one "SKU,qty" per line.' });
       return;
     }
-    if (typeof opt === 'string') {
-      lookup.mutate(opt);
-      return;
-    }
-    setProduct(opt.product);
-    setVariant(opt.variant);
-    setQuantity(Math.max(1, opt.variant.minOrderQty ?? 1));
+    const newRows: RowEntry[] = parsed.map((p) => ({
+      key: newKey(),
+      initialInput: p.sku,
+      initialQuantity: p.quantity,
+    }));
+    setRows((rs) => {
+      const filtered = rs.filter((r) => snapshots[r.key]?.status !== 'empty' && !!snapshots[r.key]);
+      return [...filtered, ...newRows];
+    });
+    setFeedback({ kind: 'info', text: `Imported ${parsed.length} row${parsed.length === 1 ? '' : 's'}. Resolving…` });
   };
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      ingestParsed(parseClipboardCsv(text));
+    } catch (e) {
+      setFeedback({
+        kind: 'error',
+        text: e instanceof Error
+          ? `Clipboard read failed: ${e.message}`
+          : 'Clipboard read failed. Your browser may have blocked it.',
+      });
+    }
+  };
+
+  const onFileChosen = async (file: File) => {
+    const text = await file.text();
+    ingestParsed(parseClipboardCsv(text));
+  };
+
+  const snapshotList = useMemo(
+    () => rows.map((r) => snapshots[r.key]).filter((s): s is QuickOrderRowSnapshot => !!s),
+    [rows, snapshots],
+  );
+
+  const validItems = useMemo<BulkAddCartItem[]>(
+    () => snapshotList
+      .filter((s) => s.status === 'resolved' && s.variantId && !!s.quantity)
+      .filter((s) => s.quantity >= (s.minOrderQty ?? 1) && (s.maxOrderQty === undefined || s.quantity <= s.maxOrderQty))
+      .map((s) => ({ variantId: s.variantId!, quantity: s.quantity })),
+    [snapshotList],
+  );
+
+  const subtotal = useMemo<Money | null>(() => {
+    const resolved = snapshotList.filter(
+      (s) => s.status === 'resolved' && s.unitPrice,
+    );
+    if (resolved.length === 0) return null;
+    const currency = resolved[0].unitPrice!.currency;
+    const amount = resolved.reduce((acc, s) => acc + s.unitPrice!.amount * s.quantity, 0);
+    return { amount, currency };
+  }, [snapshotList]);
+
+  const blockedCount = snapshotList.filter(
+    (s) => s.status === 'not_found' || s.status === 'oos',
+  ).length;
+
+  const addAll = useMutation({
+    mutationFn: () => addManyToCart({ items: validItems }),
+    onSuccess: (cart) => {
+      qc.setQueryData(queryKeys.cart, cart);
+      setFeedback({
+        kind: 'success',
+        text: `Added ${validItems.length} item${validItems.length === 1 ? '' : 's'} to cart.`,
+      });
+      setRows([emptyRow()]);
+      setSnapshots({});
+    },
+    onError: (e) => {
+      setFeedback({
+        kind: 'error',
+        text: e instanceof Error ? e.message : 'Failed to add items to cart.',
+      });
+    },
+  });
 
   return (
     <>
-      <PageHeader title="Quick order" description="Search by product name or SKU." />
+      <PageHeader
+        title="Quick order"
+        description="Search products by name or SKU, paste a list, or upload a CSV. One row per line item."
+      />
       <Card>
         <CardContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-            <Autocomplete<VariantOption, false, false, true>
-              freeSolo
-              fullWidth
-              sx={{ flex: 1 }}
-              options={options}
-              loading={search.isFetching}
-              filterOptions={(x) => x}
-              inputValue={input}
-              onInputChange={(_, v) => setInput(v)}
-              isOptionEqualToValue={(a, b) =>
-                typeof a !== 'string' && typeof b !== 'string' && a.variant.id === b.variant.id
-              }
-              getOptionLabel={(opt) =>
-                typeof opt === 'string' ? opt : `${variantLabel(opt.product, opt.variant)} (${opt.variant.sku})`
-              }
-              renderOption={(props, opt) => (
-                <Box component="li" {...props} key={opt.variant.id}>
-                  <Stack direction="row" alignItems="center" spacing={2} sx={{ width: '100%' }}>
-                    {opt.product.images[0] ? (
-                      <Avatar variant="rounded" src={opt.product.images[0].url} alt="" />
-                    ) : (
-                      <Avatar variant="rounded">{opt.product.name[0]}</Avatar>
-                    )}
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" noWrap>{variantLabel(opt.product, opt.variant)}</Typography>
-                      <Typography variant="caption" color="text.secondary">SKU {opt.variant.sku}</Typography>
-                    </Box>
-                    <Money value={opt.variant.price} />
-                  </Stack>
-                </Box>
-              )}
-              onChange={(_, opt) => handleSelect(opt)}
-              noOptionsText={debouncedInput ? 'No matches' : 'Type to search…'}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Search by product name or SKU"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && options.length === 0 && input.trim()) {
-                      e.preventDefault();
-                      lookup.mutate(input.trim());
-                    }
-                  }}
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {search.isFetching ? <CircularProgress size={16} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ContentPasteIcon />}
+              onClick={pasteFromClipboard}
+            >
+              Paste from clipboard
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UploadFileIcon />}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload CSV
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onFileChosen(f);
+                e.target.value = '';
+              }}
             />
-            <TextField
-              label="Quantity"
-              type="number"
-              inputProps={{ min: variant?.minOrderQty ?? 1, max: variant?.maxOrderQty }}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-              sx={{ width: 120 }}
-            />
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={addRow}
+            >
+              Add row
+            </Button>
           </Stack>
 
-          {lookup.error ? (
-            <Alert severity="error" sx={{ mt: 2 }}>{(lookup.error as Error).message}</Alert>
+          {feedback ? (
+            <Alert
+              severity={feedback.kind}
+              onClose={() => setFeedback(null)}
+              sx={{ mb: 2 }}
+            >
+              {feedback.text}
+            </Alert>
           ) : null}
 
-          {product && variant ? (
-            <Card variant="outlined" sx={{ mt: 2 }}>
-              <CardContent>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <div>
-                    <Typography variant="h6">{variantLabel(product, variant)}</Typography>
-                    <Typography variant="body2" color="text.secondary">{variant.sku}</Typography>
-                    <Typography sx={{ mt: 1 }}>
-                      <Money value={variant.price} />
-                    </Typography>
-                  </div>
-                  <Button variant="contained" onClick={() => add.mutate()} disabled={add.isPending}>
-                    {add.isPending ? 'Adding…' : 'Add to cart'}
-                  </Button>
-                </Stack>
-              </CardContent>
-            </Card>
-          ) : null}
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Product</TableCell>
+                  <TableCell sx={{ width: 120 }}>Qty</TableCell>
+                  <TableCell sx={{ width: 120 }} align="right">Unit price</TableCell>
+                  <TableCell sx={{ width: 120 }} align="right">Line total</TableCell>
+                  <TableCell sx={{ width: 140 }}>Status</TableCell>
+                  <TableCell sx={{ width: 48 }} />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((r, idx) => (
+                  <QuickOrderRow
+                    key={r.key}
+                    rowKey={r.key}
+                    initialInput={r.initialInput}
+                    initialQuantity={r.initialQuantity}
+                    onSnapshot={handleSnapshot}
+                    onRemove={() => removeRow(r.key)}
+                    removable={rows.length > 1}
+                    autoFocus={idx === 0 && !r.initialInput}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-          {add.isSuccess ? <Alert severity="success" sx={{ mt: 2 }}>Added to cart.</Alert> : null}
+          <Divider sx={{ my: 2 }} />
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} spacing={2}>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                {validItems.length} ready{blockedCount ? ` · ${blockedCount} blocked` : ''}
+              </Typography>
+              {subtotal ? (
+                <Typography variant="h6">
+                  Subtotal: <MoneyView value={subtotal} />
+                </Typography>
+              ) : null}
+            </Box>
+            <Button
+              variant="contained"
+              size="large"
+              onClick={() => addAll.mutate()}
+              disabled={validItems.length === 0 || addAll.isPending}
+            >
+              {addAll.isPending
+                ? 'Adding…'
+                : `Add ${validItems.length || ''} to cart`.trim()}
+            </Button>
+          </Stack>
         </CardContent>
       </Card>
     </>

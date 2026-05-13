@@ -1,8 +1,10 @@
 import { bff } from './bffClient';
-import type { AddCartItemInput, Cart } from '@b2b/domain';
+import type { AddCartItemInput, BulkAddCartItemsInput, Cart } from '@b2b/domain';
 
 export const getCart = () => bff.get<Cart>('/cart');
 export const addToCart = (input: AddCartItemInput) => bff.post<Cart>('/cart/items', input);
+export const addManyToCart = (input: BulkAddCartItemsInput) =>
+  bff.post<Cart>('/cart/items/bulk', input);
 export const updateCartItem = (id: string, quantity: number) =>
   bff.patch<Cart>(`/cart/items/${encodeURIComponent(id)}`, { quantity });
 export const removeCartItem = (id: string) =>
