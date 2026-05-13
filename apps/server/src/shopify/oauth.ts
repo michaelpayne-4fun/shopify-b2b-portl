@@ -33,13 +33,7 @@ export const generateState = (): string => base64UrlEncode(randomBytes(16));
 
 const STORE_ID = '98578891115';
 const REDIRECT_URI = 'https://shopb2bapp-b2b-portal.fly.dev/auth/callback';
-const DEFAULT_SCOPES = [
-  'customer_read_customers',
-  'customer_write_customers',
-  'customer_read_orders',
-  'customer_read_companies',
-  'customer_write_companies',
-];
+const DEFAULT_SCOPES = ['openid', 'email', 'customer-account-api:full'];
 
 const authorizeUrl = (): string =>
   `https://shopify.com/${STORE_ID}/auth/oauth/authorize`;
