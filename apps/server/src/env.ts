@@ -7,9 +7,10 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
 
   SHOPIFY_SHOP_DOMAIN: z.string().min(1),
+  SHOPIFY_CLIENT_ID: z.string().min(1),
+  SHOPIFY_CLIENT_SECRET: z.string().min(1),
   SHOPIFY_STOREFRONT_ACCESS_TOKEN: z.string().min(1),
   SHOPIFY_STOREFRONT_API_VERSION: z.string().default('2024-10'),
-  SHOPIFY_ADMIN_ACCESS_TOKEN: z.string().min(1),
   SHOPIFY_ADMIN_API_VERSION: z.string().default('2024-10'),
   SHOPIFY_CAA_CLIENT_ID: z.string().min(1),
   SHOPIFY_CAA_CLIENT_SECRET: z.string().optional(),

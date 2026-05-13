@@ -9,9 +9,10 @@
 | `SESSION_SIGNING_KEY` | _required_ | 32+ bytes random; signs the JWT in the session cookie |
 | `DATABASE_URL` | _required_ | Postgres connection string |
 | `SHOPIFY_SHOP_DOMAIN` | _required_ | e.g. `acme.myshopify.com` |
-| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | _required_ | Public storefront token |
+| `SHOPIFY_CLIENT_ID` | _required_ | OAuth app client ID — used by `adminToken.ts` to obtain short-lived Admin API tokens via client credentials grant (replaces static `SHOPIFY_ADMIN_ACCESS_TOKEN`) |
+| `SHOPIFY_CLIENT_SECRET` | _required_ | OAuth app client secret — paired with `SHOPIFY_CLIENT_ID`; never commit this value |
+| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | _required_ | Public storefront token (static; unaffected by admin auth change) |
 | `SHOPIFY_STOREFRONT_API_VERSION` | `2024-10` | |
-| `SHOPIFY_ADMIN_ACCESS_TOKEN` | _required_ | Server-side admin token |
 | `SHOPIFY_ADMIN_API_VERSION` | `2024-10` | |
 | `SHOPIFY_CAA_CLIENT_ID` | _required_ | Customer Account API client id |
 | `SHOPIFY_CAA_CLIENT_SECRET` | optional | If your CAA app is a confidential client |

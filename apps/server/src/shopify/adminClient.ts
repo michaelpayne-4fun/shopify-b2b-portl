@@ -1,4 +1,5 @@
 import { env } from '../env';
+import { getAdminToken } from './adminToken';
 import type { GraphQLResult } from './storefrontClient';
 
 const url = () =>
@@ -8,11 +9,12 @@ export const adminQuery = async <T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> => {
+  const token = await getAdminToken();
   const res = await fetch(url(), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-shopify-access-token': env().SHOPIFY_ADMIN_ACCESS_TOKEN,
+      'x-shopify-access-token': token,
     },
     body: JSON.stringify({ query, variables }),
   });
