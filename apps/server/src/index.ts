@@ -50,8 +50,8 @@ if (!isProduction) {
   });
 }
 
-api.route('/auth', authRoutes);
 api.use('/auth/me', optionalAuth);
+api.route('/auth', authRoutes);
 
 const authed = new Hono<{ Variables: AppVariables }>();
 authed.use('*', requireAuth);

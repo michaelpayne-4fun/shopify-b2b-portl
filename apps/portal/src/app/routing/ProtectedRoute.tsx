@@ -5,10 +5,10 @@ import { useBuyerContextStore } from '@/state/stores/buyerContextStore';
 
 export const ProtectedRoute = () => {
   const location = useLocation();
-  const { isLoading, unauthenticated } = useAuthMe();
+  const { isLoading, isError, unauthenticated } = useAuthMe();
   const context = useBuyerContextStore((s) => s.context);
 
-  if (unauthenticated) {
+  if (unauthenticated || isError) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   if (isLoading || !context) {
