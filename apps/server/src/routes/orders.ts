@@ -128,16 +128,20 @@ const CAA_ORDER_FIELDS = `
     }
   }
   shippingAddress {
-    firstName lastName address1 address2 city zoneCode zip territoryCode phone
+    firstName lastName address1 address2 city zoneCode zip territoryCode
+    phone: phoneNumber
   }
   billingAddress {
-    firstName lastName address1 address2 city zoneCode zip territoryCode phone
+    firstName lastName address1 address2 city zoneCode zip territoryCode
+    phone: phoneNumber
   }
 `;
 
 
 const ADMIN_ORDER_FIELDS = `
-  id name processedAt fulfillmentStatus financialStatus poNumber
+  id name processedAt poNumber
+  fulfillmentStatus: displayFulfillmentStatus
+  financialStatus: displayFinancialStatus
   totalPriceSet { presentmentMoney { amount currencyCode } }
   subtotalPriceSet { presentmentMoney { amount currencyCode } }
   lineItems(first: 50) {
