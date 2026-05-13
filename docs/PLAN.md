@@ -86,12 +86,17 @@ Custom-app path. **Do not create a Partners app** — see
 3. **Catalogs → New catalog** → assign to `Acme HQ`. Add a couple of
    products with known SKUs (e.g. `WIDGET-001`).
 
-### 2.2 Create the custom app
+### 2.2 Create the app in the Dev Dashboard
 
-Shopify Admin → **Apps → "Develop apps"**:
+Shopify Admin → **Apps → "Develop apps"** now redirects all new app
+creation to the **Shopify Dev Dashboard**. Click **"Build apps in Dev
+Dashboard"** — the old Admin-based custom app flow no longer exists for
+new apps.
 
-1. **Create an app** named e.g. `B2B Portal`.
-2. **Configuration → Admin API integration → Configure**. Scopes:
+In the Dev Dashboard:
+
+1. **Create app** → name it e.g. `B2B Portal` → select your store.
+2. **Configuration → Admin API scopes**. Add:
    - `read_companies`, `write_companies`
    - `read_company_locations`
    - `read_company_contacts`, `write_company_contacts`
@@ -99,24 +104,25 @@ Shopify Admin → **Apps → "Develop apps"**:
      order-scope split)
    - `read_draft_orders`, `write_draft_orders` (optional Draft Order
      mirror — v2)
-3. **Configuration → Storefront API integration → Configure**. Scopes:
+3. **Configuration → Storefront API scopes**. Add:
    - `unauthenticated_read_product_listings`
    - `unauthenticated_read_product_inventory`
    - `unauthenticated_read_customers`
    - `unauthenticated_write_checkouts`
    - Any B2B `buyer_identity` scopes listed
-4. **Install app** on the store.
+4. **Save and install** the app on your store.
 5. **API credentials** tab → capture the following:
    - **Client ID** → `SHOPIFY_CLIENT_ID`
    - **Client secret** → `SHOPIFY_CLIENT_SECRET`
    - **Storefront API access token** → `SHOPIFY_STOREFRONT_ACCESS_TOKEN`
 
-   > **Why no Admin API access token?** As of January 2026, Shopify no
-   > longer issues static `X-Shopify-Access-Token` values for new custom
-   > apps. The BFF obtains short-lived tokens automatically at runtime via
-   > the OAuth 2.0 client credentials grant using `SHOPIFY_CLIENT_ID` and
-   > `SHOPIFY_CLIENT_SECRET`. See `apps/server/src/shopify/adminToken.ts`.
-   > The Storefront API still uses a static token and is unaffected.
+   > **There is no Admin API access token to copy.** The Dev Dashboard
+   > does not issue static `X-Shopify-Access-Token` values for new apps.
+   > The BFF fetches short-lived tokens automatically at runtime via the
+   > OAuth 2.0 client credentials grant. See
+   > `apps/server/src/shopify/adminToken.ts`. If you see an automation
+   > token (`atkn_…`) anywhere, it is from the legacy flow — do not use
+   > it and revoke it if it was generated.
 
 ### 2.3 Configure the Customer Account API (Headless channel)
 
