@@ -12,6 +12,7 @@ import { getCompanySettings } from '../portal/admin/companySettings';
 import { ensureCart } from '../portal/cart/ensureCart';
 import { CART_LINES_ADD_MUTATION, renderCartQuery } from '../shopify/queries';
 import { storefrontQuery } from '../shopify/storefrontClient';
+import { resolveVariantIdBySku } from '../shopify/resolveVariant';
 import { mapShopifyCart, type ShopifyCartResponse } from '../shopify/mappers/cartMapper';
 
 export const shoppingListRoutes = new Hono<{ Variables: AppVariables }>();
@@ -103,17 +104,12 @@ shoppingListRoutes.post('/shopping-lists/:id/add-to-cart', requirePermission('ca
   const variantMap = new Map<string, string>(); // sku -> variantId
 
   if (skuLookupNeeded.length > 0) {
-    // Batch resolve: one query per SKU (Storefront doesn't support multi-sku bulk lookup cheaply)
+    // Per-SKU exact-match resolution. Shared with cart.ts via
+    // resolveVariantIdBySku — keeps tokenised `sku:` mismatches from
+    // pulling the wrong variant.
     await Promise.all(
       skuLookupNeeded.map(async (it) => {
-        const res = await storefrontQuery<{
-          products: { edges: Array<{ node: { variants: { edges: Array<{ node: { id: string } }> } } }> };
-        }>(
-          `query Sku($q: String!) { products(query: $q, first: 1) { edges { node { variants(first: 1) { edges { node { id } } } } } } }`,
-          { q: `sku:${it.sku}` },
-          { buyerAccessToken: auth.caaAccessToken },
-        );
-        const vid = res.products.edges[0]?.node.variants.edges[0]?.node.id;
+        const vid = await resolveVariantIdBySku(it.sku, auth.caaAccessToken);
         if (vid) variantMap.set(it.sku, vid);
       }),
     );

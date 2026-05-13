@@ -9,6 +9,7 @@ import {
 } from '../shopify/queries';
 import { storefrontQuery } from '../shopify/storefrontClient';
 import { checkoutUrlOf, mapShopifyCart, type ShopifyCartResponse } from '../shopify/mappers/cartMapper';
+import { resolveVariantIdBySku } from '../shopify/resolveVariant';
 import type { AppVariables } from '../middleware/types';
 import { clearCartId, getCartId } from '../portal/cart/cartStore';
 import { ensureCart as _ensureCart } from '../portal/cart/ensureCart';
@@ -38,17 +39,11 @@ cartRoutes.post('/cart/items', zValidator('json', addItemSchema), async (c) => {
   const input = c.req.valid('json');
   const cart = await ensureCart(c.var.db, auth.sessionId, auth.caaAccessToken, auth.location?.shopifyLocationGid);
 
-  // Resolve sku -> variantId if needed.
+  // Resolve sku -> variantId if needed. resolveVariantIdBySku does the
+  // exact-SKU filter that Shopify's tokenised `sku:` query lacks.
   let variantId = input.variantId;
   if (!variantId && input.sku) {
-    const res = await storefrontQuery<{
-      products: { edges: Array<{ node: { variants: { edges: Array<{ node: { id: string } }> } } }> };
-    }>(
-      `query Sku($q: String!) { products(query: $q, first: 1) { edges { node { variants(first: 1) { edges { node { id } } } } } } }`,
-      { q: `sku:${input.sku}` },
-      { buyerAccessToken: auth.caaAccessToken },
-    );
-    variantId = res.products.edges[0]?.node.variants.edges[0]?.node.id;
+    variantId = (await resolveVariantIdBySku(input.sku, auth.caaAccessToken)) ?? undefined;
     if (!variantId) throw new ValidationError(`Unknown SKU "${input.sku}"`);
   }
 
