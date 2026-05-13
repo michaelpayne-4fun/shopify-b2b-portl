@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { ValidationError } from '@b2b/domain';
+import { ValidationError, type ShoppingList } from '@b2b/domain';
 import { requireFeatureFlag, requirePermission } from '../middleware/authz';
 import type { AppVariables } from '../middleware/types';
 import {
@@ -12,11 +12,45 @@ import { getCompanySettings } from '../portal/admin/companySettings';
 import { ensureCart } from '../portal/cart/ensureCart';
 import { CART_LINES_ADD_MUTATION, renderCartQuery } from '../shopify/queries';
 import { storefrontQuery } from '../shopify/storefrontClient';
-import { resolveVariantIdBySku } from '../shopify/resolveVariant';
+import { resolveVariantIdBySku, resolveVariantsBySkus } from '../shopify/resolveVariant';
 import { mapShopifyCart, type ShopifyCartResponse } from '../shopify/mappers/cartMapper';
 
 export const shoppingListRoutes = new Hono<{ Variables: AppVariables }>();
 shoppingListRoutes.use('*', requireFeatureFlag('shoppingLists'));
+
+/**
+ * Enrich a list's items with current B2B unit prices resolved via the
+ * buyer's CAA token. Best-effort: a failure logs and returns the list
+ * un-priced rather than failing the whole response.
+ */
+const enrichWithPrices = async (
+  list: ShoppingList,
+  buyerAccessToken: string,
+): Promise<ShoppingList> => {
+  if (list.items.length === 0) return list;
+  try {
+    const summaries = await resolveVariantsBySkus(
+      list.items.map((it) => it.sku),
+      buyerAccessToken,
+    );
+    return {
+      ...list,
+      items: list.items.map((it) => {
+        const s = summaries.get(it.sku);
+        if (!s) return it;
+        return {
+          ...it,
+          variantId: it.variantId ?? s.variantId,
+          unitPrice: s.price,
+        };
+      }),
+    };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[shopping-lists] price enrichment failed:', err);
+    return list;
+  }
+};
 
 shoppingListRoutes.get('/shopping-lists', requirePermission('shoppingLists.view'), async (c) => {
   const page = await listShoppingLists(c.var.db, c.var.auth!.company.id, c.var.auth!.buyer.id);
@@ -24,7 +58,8 @@ shoppingListRoutes.get('/shopping-lists', requirePermission('shoppingLists.view'
 });
 
 shoppingListRoutes.get('/shopping-lists/:id', requirePermission('shoppingLists.view'), async (c) => {
-  return c.json(await getShoppingList(c.var.db, c.req.param('id')));
+  const list = await getShoppingList(c.var.db, c.req.param('id'));
+  return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
 });
 
 const upsertSchema = z.object({
@@ -86,7 +121,7 @@ shoppingListRoutes.post(
       name: input.name,
       variantId: input.variantId,
     });
-    return c.json(list);
+    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
   },
 );
 
@@ -108,7 +143,7 @@ shoppingListRoutes.patch(
       c.req.param('itemId'),
       c.req.valid('json'),
     );
-    return c.json(list);
+    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
   },
 );
 
@@ -117,7 +152,7 @@ shoppingListRoutes.delete(
   requirePermission('shoppingLists.manage'),
   async (c) => {
     const list = await removeItem(c.var.db, c.req.param('id'), c.req.param('itemId'));
-    return c.json(list);
+    return c.json(await enrichWithPrices(list, c.var.auth!.caaAccessToken));
   },
 );
 

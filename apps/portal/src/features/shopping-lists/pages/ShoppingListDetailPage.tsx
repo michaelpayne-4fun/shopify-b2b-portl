@@ -1,12 +1,12 @@
 import {
-  Alert, Box, Button, Card, CardContent, Chip, IconButton,
+  Alert, Box, Button, Card, CardContent, Chip, Divider, IconButton,
   Stack, TextField, Typography,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { Cart, ShoppingListItem } from '@b2b/domain';
+import type { Cart, Money as MoneyT, ShoppingListItem } from '@b2b/domain';
 import {
   addItemToList, addListToCart, getShoppingList, removeItemFromList, updateItemInList,
 } from '@/services/shoppingListService';
@@ -14,6 +14,7 @@ import { queryKeys } from '@/state/queries/queryKeys';
 import { PageHeader } from '@/ui/components/PageHeader';
 import { LoadingState } from '@/ui/components/LoadingState';
 import { ErrorState } from '@/ui/components/ErrorState';
+import { Money } from '@/ui/components/Money';
 import { Can, usePermission } from '@/ui/components/Can';
 import { ProductSearch } from '@/features/catalog/components/ProductSearch';
 import type { ProductSearchSelection } from '@/features/catalog/components/ProductSearch';
@@ -144,18 +145,21 @@ export const ShoppingListDetailPage = () => {
           {list.items.length === 0 ? (
             <Typography color="text.secondary">No items yet. Add one above.</Typography>
           ) : (
-            <Stack divider={<div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px 0' }} />} spacing={0.5}>
-              {list.items.map((it) => (
-                <EditableItem
-                  key={it.id}
-                  item={it}
-                  listId={id!}
-                  canEdit={canManage}
-                  onRemove={() => remove.mutate(it.id)}
-                  removeDisabled={remove.isPending}
-                />
-              ))}
-            </Stack>
+            <>
+              <Stack divider={<div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px 0' }} />} spacing={0.5}>
+                {list.items.map((it) => (
+                  <EditableItem
+                    key={it.id}
+                    item={it}
+                    listId={id!}
+                    canEdit={canManage}
+                    onRemove={() => remove.mutate(it.id)}
+                    removeDisabled={remove.isPending}
+                  />
+                ))}
+              </Stack>
+              <ListTotals items={list.items} />
+            </>
           )}
         </CardContent></Card>
 
@@ -211,11 +215,22 @@ const EditableItem = ({ item, listId, canEdit, onRemove, removeDisabled }: Edita
     save.mutate(qty);
   };
 
+  const lineTotal: MoneyT | undefined = item.unitPrice
+    ? { amount: item.unitPrice.amount * qty, currency: item.unitPrice.currency }
+    : undefined;
+
   return (
     <Stack direction="row" alignItems="center" sx={{ py: 0.5 }} spacing={2}>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body2" noWrap>{item.name}</Typography>
         <Typography variant="caption" color="text.secondary">SKU {item.sku}</Typography>
+      </Box>
+      <Box sx={{ width: 96, textAlign: 'right' }}>
+        {item.unitPrice ? (
+          <Typography variant="body2"><Money value={item.unitPrice} /></Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary">—</Typography>
+        )}
       </Box>
       <TextField
         type="number"
@@ -231,9 +246,16 @@ const EditableItem = ({ item, listId, canEdit, onRemove, removeDisabled }: Edita
         disabled={!canEdit || save.isPending}
         error={!!saveError}
         helperText={saveError ? 'Save failed' : undefined}
-        sx={{ width: 96 }}
+        sx={{ width: 88 }}
         title={canEdit ? 'Press Enter or click away to save' : undefined}
       />
+      <Box sx={{ width: 96, textAlign: 'right' }}>
+        {lineTotal ? (
+          <Typography variant="body2"><Money value={lineTotal} /></Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary">—</Typography>
+        )}
+      </Box>
       <Can permission="shoppingLists.manage">
         <IconButton
           size="small"
@@ -245,5 +267,39 @@ const EditableItem = ({ item, listId, canEdit, onRemove, removeDisabled }: Edita
         </IconButton>
       </Can>
     </Stack>
+  );
+};
+
+const ListTotals = ({ items }: { items: ShoppingListItem[] }) => {
+  const subtotal = useMemo<MoneyT | null>(() => {
+    const priced = items.filter((it) => it.unitPrice);
+    if (priced.length === 0) return null;
+    const currencies = new Set(priced.map((it) => it.unitPrice!.currency));
+    if (currencies.size > 1) return null;
+    const currency = priced[0].unitPrice!.currency;
+    const amount = priced.reduce(
+      (acc, it) => acc + it.unitPrice!.amount * it.quantity,
+      0,
+    );
+    return { amount, currency };
+  }, [items]);
+
+  const unpriced = items.filter((it) => !it.unitPrice).length;
+
+  return (
+    <>
+      <Divider sx={{ my: 1 }} />
+      <Stack direction="row" justifyContent="flex-end" alignItems="baseline" spacing={2}>
+        {unpriced > 0 ? (
+          <Typography variant="caption" color="text.secondary">
+            {unpriced} item{unpriced === 1 ? '' : 's'} without a price
+          </Typography>
+        ) : null}
+        <Typography variant="body2" color="text.secondary">Subtotal</Typography>
+        <Typography variant="subtitle1" sx={{ minWidth: 96, textAlign: 'right' }}>
+          {subtotal ? <Money value={subtotal} /> : '—'}
+        </Typography>
+      </Stack>
+    </>
   );
 };
