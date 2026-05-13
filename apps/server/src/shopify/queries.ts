@@ -14,31 +14,36 @@ export const CUSTOMER_ME_QUERY = `
 `;
 
 export const COMPANY_FOR_CUSTOMER_QUERY = `
-  query CompanyForCustomer($customerId: ID!) {
-    customer(id: $customerId) {
+  query CompanyForCustomer {
+    customer {
       id
-      companyContactProfiles {
-        company {
-          id
-          name
-          locations(first: 50) {
-            edges {
-              node {
-                id
-                name
-                shippingAddress {
-                  firstName lastName company address1 address2
-                  city provinceCode zip countryCode phone
+      companyContacts(first: 10) {
+        edges {
+          node {
+            id
+            company {
+              id
+              name
+              locations(first: 50) {
+                edges {
+                  node {
+                    id
+                    name
+                    shippingAddress {
+                      firstName lastName company address1 address2
+                      city provinceCode zip countryCode phone
+                    }
+                    roleAssignments(first: 50) {
+                      edges {
+                        node {
+                          role { name }
+                          contact { id }
+                        }
+                      }
+                    }
+                  }
                 }
               }
-            }
-          }
-        }
-        roleAssignments(first: 50) {
-          edges {
-            node {
-              role { name }
-              companyLocation { id }
             }
           }
         }

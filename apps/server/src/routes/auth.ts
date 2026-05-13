@@ -61,20 +61,51 @@ authRoutes.post('/callback', zValidator('json', callbackSchema), async (c) => {
   const companyData = await tagStage('company_lookup', () =>
     customerAccountQuery<{
       customer: {
-        companyContactProfiles: Array<{
-          company: { id: string };
-          roleAssignments: { edges: Array<{ node: { role: { name: string }; companyLocation: { id: string } } }> };
-        }>;
+        companyContacts: {
+          edges: Array<{
+            node: {
+              id: string;
+              company: {
+                id: string;
+                locations: {
+                  edges: Array<{
+                    node: {
+                      id: string;
+                      roleAssignments: {
+                        edges: Array<{
+                          node: { role: { name: string }; contact: { id: string } };
+                        }>;
+                      };
+                    };
+                  }>;
+                };
+              } | null;
+            };
+          }>;
+        };
       };
-    }>(tokens.access_token, COMPANY_FOR_CUSTOMER_QUERY, { customerId: me.customer.id }),
+    }>(tokens.access_token, COMPANY_FOR_CUSTOMER_QUERY),
   );
 
-  const profile = companyData.customer.companyContactProfiles[0];
-  if (!profile) throw new ValidationError('Buyer is not associated with any Shopify B2B company');
+  const contactNode = companyData.customer.companyContacts.edges[0]?.node;
+  if (!contactNode?.company) throw new ValidationError('Buyer is not associated with any Shopify B2B company');
 
-  const companyId = profile.company.id;
-  const firstRoleAssignment = profile.roleAssignments.edges[0]?.node;
-  const isLocationAdmin = isShopifyLocationAdmin(firstRoleAssignment?.role.name ?? '');
+  const company = contactNode.company;
+  const companyId = company.id;
+  const contactId = contactNode.id;
+
+  let myRoleName = '';
+  let myLocationId: string | null = null;
+  for (const locEdge of company.locations.edges) {
+    const ra = locEdge.node.roleAssignments.edges.find((e) => e.node.contact.id === contactId);
+    if (ra) {
+      myRoleName = ra.node.role.name;
+      myLocationId = locEdge.node.id;
+      break;
+    }
+  }
+  const fallbackLocationId = company.locations.edges[0]?.node.id ?? null;
+  const isLocationAdmin = isShopifyLocationAdmin(myRoleName);
 
   await tagStage('bootstrap_admin', () =>
     bootstrapPortalAdminIfFirst(db, {
@@ -92,7 +123,7 @@ authRoutes.post('/callback', zValidator('json', callbackSchema), async (c) => {
       id: sessionId,
       shopifyCustomerId: me.customer.id,
       shopifyCompanyGid: companyId,
-      activeLocationGid: firstRoleAssignment?.companyLocation.id ?? null,
+      activeLocationGid: myLocationId ?? fallbackLocationId,
       caaAccessToken: tokens.access_token,
       caaRefreshToken: tokens.refresh_token ?? null,
       caaExpiresAt: Math.floor(Date.now() / 1000) + tokens.expires_in,

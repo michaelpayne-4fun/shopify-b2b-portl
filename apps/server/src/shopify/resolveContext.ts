@@ -16,13 +16,26 @@ interface SessionRow {
   caaAccessToken: string;
 }
 
+interface CompanyContactNode {
+  id: string;
+  company: (ShopifyCompanyResponse & {
+    locations: {
+      edges: Array<{
+        node: {
+          id: string;
+          roleAssignments: {
+            edges: Array<{ node: { role: { name: string }; contact: { id: string } } }>;
+          };
+        };
+      }>;
+    };
+  }) | null;
+}
+
 interface CompanyForCustomerData {
   customer: {
     id: string;
-    companyContactProfiles: Array<{
-      company: ShopifyCompanyResponse;
-      roleAssignments: { edges: Array<{ node: { role: { name: string }; companyLocation: { id: string } } }> };
-    }>;
+    companyContacts: { edges: Array<{ node: CompanyContactNode }> };
   };
 }
 
@@ -46,28 +59,37 @@ export const resolveAuthContext = async (
   const data = await customerAccountQuery<CompanyForCustomerData>(
     session.caaAccessToken,
     COMPANY_FOR_CUSTOMER_QUERY,
-    { customerId: me.customer.id },
   );
 
-  const profile = data.customer.companyContactProfiles.find(
-    (p) => p.company.id === session.shopifyCompanyGid,
-  ) ?? data.customer.companyContactProfiles[0];
+  const contactNodes = data.customer.companyContacts.edges.map((e) => e.node);
+  const contact =
+    contactNodes.find((n) => n.company?.id === session.shopifyCompanyGid) ?? contactNodes[0];
 
-  if (!profile) {
+  if (!contact?.company) {
     throw new Error('Buyer is not associated with any Shopify B2B company');
   }
 
-  const company: Company = mapShopifyCompany(profile.company);
+  const company: Company = mapShopifyCompany(contact.company);
   const activeLocationId =
     session.activeLocationGid ?? company.defaultLocationId ?? company.locations[0]?.id;
   const location = company.locations.find((l) => l.id === activeLocationId);
 
-  // Determine role: pick the role for the active location (or the first
-  // assignment if no location match).
-  const roleAssignment =
-    profile.roleAssignments.edges.find((e) => e.node.companyLocation.id === activeLocationId) ??
-    profile.roleAssignments.edges[0];
-  const shopifyRoleName = roleAssignment?.node.role.name ?? 'Buyer';
+  // Determine role: among each location's roleAssignments, find the one
+  // whose contact is us. Prefer the assignment on the active location.
+  const findRoleOnLocation = (locId: string | undefined): string | null => {
+    if (!locId) return null;
+    const locEdge = contact.company!.locations.edges.find((e) => e.node.id === locId);
+    const ra = locEdge?.node.roleAssignments.edges.find((e) => e.node.contact.id === contact.id);
+    return ra?.node.role.name ?? null;
+  };
+  const findAnyRole = (): string | null => {
+    for (const locEdge of contact.company!.locations.edges) {
+      const ra = locEdge.node.roleAssignments.edges.find((e) => e.node.contact.id === contact.id);
+      if (ra) return ra.node.role.name;
+    }
+    return null;
+  };
+  const shopifyRoleName = findRoleOnLocation(activeLocationId) ?? findAnyRole() ?? 'Buyer';
   const shopifyPermissions = mapShopifyRoleToPermissions(shopifyRoleName);
   const role = await buildMergedRole(db, {
     buyerId: me.customer.id,
