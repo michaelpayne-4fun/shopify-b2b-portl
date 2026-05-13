@@ -16,13 +16,14 @@ interface SessionRow {
   caaAccessToken: string;
 }
 
+type ShopifyLocationNode = ShopifyCompanyResponse['locations']['edges'][number]['node'];
+
 interface CompanyContactNode {
   id: string;
-  company: (ShopifyCompanyResponse & {
+  company: (Omit<ShopifyCompanyResponse, 'locations'> & {
     locations: {
       edges: Array<{
-        node: {
-          id: string;
+        node: ShopifyLocationNode & {
           roleAssignments: {
             edges: Array<{ node: { role: { name: string }; contact: { id: string } } }>;
           };

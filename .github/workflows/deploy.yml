@@ -1,0 +1,49 @@
+name: Deploy to Fly
+
+on:
+  push:
+    branches:
+      - claude/shopify-b2b-portal
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Typecheck, test, deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Portal typecheck
+        run: yarn workspace @b2b/portal typecheck
+
+      - name: Server typecheck
+        run: yarn workspace @b2b/server typecheck
+
+      - name: Server tests
+        run: yarn workspace @b2b/server test
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --app shopb2bapp-b2b-portal
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
