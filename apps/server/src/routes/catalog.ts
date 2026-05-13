@@ -45,10 +45,23 @@ catalogRoutes.get('/catalog/sku/:sku', async (c) => {
   const auth = c.var.auth!;
   const data = await storefrontQuery<ProductsSearchData>(
     PRODUCTS_SEARCH_QUERY,
-    { query: `sku:${sku}`, first: 1, after: null },
+    { query: `sku:${sku}`, first: 10, after: null },
     { buyerAccessToken: auth.caaAccessToken },
   );
-  const node = data.products.edges[0]?.node;
-  if (!node) throw new NotFoundError('Product', sku);
-  return c.json(mapShopifyProduct(node));
+  // Shopify's storefront search tokenises `sku:` queries, so
+  // "sku:WIDGET-003" can return WIDGET-001 (shared "WIDGET" token).
+  // Pick the product/variant whose SKU is exactly the one requested.
+  for (const edge of data.products.edges) {
+    const product = mapShopifyProduct(edge.node);
+    const match = product.variants.find((v) => v.sku === sku);
+    if (match) {
+      return c.json({
+        ...product,
+        sku: match.sku,
+        defaultVariantId: match.id,
+        variants: [match, ...product.variants.filter((v) => v.id !== match.id)],
+      });
+    }
+  }
+  throw new NotFoundError('Product', sku);
 });

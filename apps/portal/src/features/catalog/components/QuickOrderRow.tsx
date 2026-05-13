@@ -172,8 +172,10 @@ export const QuickOrderRow = ({
           inputValue={input}
           onInputChange={(_, v, reason) => {
             setInput(v);
-            if (reason === 'input' && variant) reset();
-            if (reason === 'clear') reset();
+            // Clear any stale resolved variant or error message whenever
+            // the user edits the field, so a previously failed lookup
+            // doesn't keep a "Not found" chip after the field is cleared.
+            if (reason === 'input' || reason === 'clear') reset();
           }}
           isOptionEqualToValue={(a, b) =>
             typeof a !== 'string' && typeof b !== 'string' && a.variant.id === b.variant.id

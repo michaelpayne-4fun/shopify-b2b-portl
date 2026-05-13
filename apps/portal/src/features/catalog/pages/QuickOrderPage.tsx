@@ -25,6 +25,11 @@ interface ParsedRow {
   quantity: number;
 }
 
+interface ParseResult {
+  rows: ParsedRow[];
+  skipped: number;
+}
+
 const newKey = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -32,8 +37,15 @@ const newKey = (): string =>
 
 const emptyRow = (): RowEntry => ({ key: newKey() });
 
-const parseClipboardCsv = (text: string): ParsedRow[] => {
+// Real SKUs are short and have no whitespace. Anything else is almost
+// certainly stray text from a chat UI, an email signature, etc., and
+// would just generate a "Not found" row that the user has to delete.
+const looksLikeSku = (sku: string): boolean =>
+  sku.length > 0 && sku.length <= 64 && !/\s/.test(sku);
+
+const parseClipboardCsv = (text: string): ParseResult => {
   const rows: ParsedRow[] = [];
+  let skipped = 0;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -41,10 +53,11 @@ const parseClipboardCsv = (text: string): ParsedRow[] => {
     const sku = cols[0];
     if (!sku) continue;
     if (/^sku$/i.test(sku)) continue; // skip header
+    if (!looksLikeSku(sku)) { skipped++; continue; }
     const qty = Math.max(1, parseInt(cols[1] ?? '1', 10) || 1);
     rows.push({ sku, quantity: qty });
   }
-  return rows;
+  return { rows, skipped };
 };
 
 export const QuickOrderPage = () => {
@@ -76,21 +89,38 @@ export const QuickOrderPage = () => {
       return next.length === 0 ? [emptyRow()] : next;
     });
 
-  const ingestParsed = (parsed: ParsedRow[]) => {
-    if (parsed.length === 0) {
-      setFeedback({ kind: 'info', text: 'No rows found in clipboard. Use one "SKU,qty" per line.' });
+  const ingestParsed = (parsed: ParseResult) => {
+    if (parsed.rows.length === 0) {
+      setFeedback({
+        kind: 'info',
+        text: parsed.skipped
+          ? `No SKU-shaped rows found (${parsed.skipped} line${parsed.skipped === 1 ? '' : 's'} skipped). Use one "SKU,qty" per line.`
+          : 'No rows found in clipboard. Use one "SKU,qty" per line.',
+      });
       return;
     }
-    const newRows: RowEntry[] = parsed.map((p) => ({
+    const newRows: RowEntry[] = parsed.rows.map((p) => ({
       key: newKey(),
       initialInput: p.sku,
       initialQuantity: p.quantity,
     }));
     setRows((rs) => {
-      const filtered = rs.filter((r) => snapshots[r.key]?.status !== 'empty' && !!snapshots[r.key]);
+      const filtered = rs.filter((r) => {
+        const snap = snapshots[r.key];
+        // Drop rows that haven't been touched, are empty, or are
+        // showing a stale "not found" from earlier; keep anything the
+        // buyer has already resolved or is actively working on.
+        if (!snap) return false;
+        if (snap.status === 'empty' || snap.status === 'not_found') return false;
+        return true;
+      });
       return [...filtered, ...newRows];
     });
-    setFeedback({ kind: 'info', text: `Imported ${parsed.length} row${parsed.length === 1 ? '' : 's'}. Resolving…` });
+    const imported = `Imported ${parsed.rows.length} row${parsed.rows.length === 1 ? '' : 's'}.`;
+    const skippedNote = parsed.skipped
+      ? ` Skipped ${parsed.skipped} non-SKU line${parsed.skipped === 1 ? '' : 's'}.`
+      : '';
+    setFeedback({ kind: 'info', text: `${imported}${skippedNote} Resolving…` });
   };
 
   const pasteFromClipboard = async () => {
