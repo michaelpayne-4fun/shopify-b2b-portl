@@ -36,11 +36,7 @@ const REDIRECT_URI = 'https://shopb2bapp-b2b-portal.fly.dev/auth/callback';
 const DEFAULT_SCOPES = [
   'openid',
   'email',
-  'customer_read_customers',
-  'customer_write_customers',
-  'customer_read_orders',
-  'customer_read_companies',
-  'customer_write_companies',
+  'https://api.customers.com/auth/customer.graphql',
 ];
 
 const authorizeUrl = (): string =>
