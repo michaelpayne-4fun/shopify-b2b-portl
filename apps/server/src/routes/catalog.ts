@@ -52,16 +52,35 @@ catalogRoutes.get('/catalog/search', zValidator('query', searchSchema), async (c
 catalogRoutes.get('/catalog/sku/:sku', async (c) => {
   const sku = c.req.param('sku');
   const auth = c.var.auth!;
+  // Plain text query (not `sku:${sku}`). The field-prefixed form
+  // intermittently 5xx'd for SKUs like COMP-001/WIDGET-003 even when
+  // the variants were demonstrably in the buyer's catalog and price
+  // list, while the autocomplete (text search via /catalog/search)
+  // returned them fine. Same query path as /catalog/search; the
+  // exact-SKU post-filter below keeps results correct when text-
+  // tokenization pulls in siblings (e.g., "WIDGET-001" can also
+  // surface WIDGET-002 by shared "WIDGET" token).
   const data = await storefrontQuery<ProductsSearchData>(
     PRODUCTS_SEARCH_QUERY,
-    { query: `sku:${sku}`, first: 10, after: null, ...buyerCtx(auth) },
+    { query: sku, first: 25, after: null, ...buyerCtx(auth) },
     { buyerAccessToken: auth.caaAccessToken },
   );
-  // Shopify's storefront search tokenises `sku:` queries, so
-  // "sku:WIDGET-003" can return WIDGET-001 (shared "WIDGET" token).
-  // Pick the product/variant whose SKU is exactly the one requested.
   for (const edge of data.products.edges) {
-    const product = mapShopifyProduct(edge.node);
+    // Per-edge try/catch: a single bad sibling product (e.g., a
+    // variant Storefront returns with malformed price under buyer
+    // context) shouldn't 500 the whole lookup. Log and skip — keep
+    // iterating to find the exact-SKU match.
+    let product;
+    try {
+      product = mapShopifyProduct(edge.node);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[catalog/sku] sku=${sku} mapShopifyProduct failed for product=${edge.node?.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+      continue;
+    }
     const match = product.variants.find((v) => v.sku === sku);
     if (match) {
       return c.json({

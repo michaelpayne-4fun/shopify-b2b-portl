@@ -35,11 +35,12 @@ export interface BuyerContext {
  * catalog — passing the buyer access token via header alone reaches
  * a default scope that often excludes catalog-only products.
  *
- * Shopify's storefront `query: sku:XYZ` is tokenized: searching for
- * "WIDGET-003" can return WIDGET-001 because they share the WIDGET
- * token. We fetch up to 10 candidate products and pick the variant
- * whose SKU is exactly the one requested. Returns null if no exact
- * match is found.
+ * Plain text query (not `sku:${sku}`): the field-prefixed form was
+ * observed to 5xx for valid catalog SKUs (COMP-001/WIDGET-003) where
+ * the same SKU resolved fine via plain text search. Storefront text
+ * search is tokenized so "WIDGET-003" can also return WIDGET-001 —
+ * we fetch up to 25 candidates and pick the variant whose SKU is
+ * exactly the one requested. Returns null if no exact match.
  */
 export const resolveVariantIdBySku = async (
   sku: string,
@@ -51,11 +52,11 @@ export const resolveVariantIdBySku = async (
        $companyLocationId: ID!,
        $customerAccessToken: String!
      ) @inContext(buyer: { companyLocationId: $companyLocationId, customerAccessToken: $customerAccessToken }) {
-       products(query: $q, first: 10) {
+       products(query: $q, first: 25) {
          edges { node { variants(first: 25) { edges { node { id sku } } } } }
        }
      }`,
-    { q: `sku:${sku}`, ...ctx },
+    { q: sku, ...ctx },
     { buyerAccessToken: ctx.customerAccessToken },
   );
   for (const productEdge of data.products.edges) {
@@ -90,7 +91,7 @@ export const resolveVariantsBySkus = async (
              $companyLocationId: ID!,
              $customerAccessToken: String!
            ) @inContext(buyer: { companyLocationId: $companyLocationId, customerAccessToken: $customerAccessToken }) {
-             products(query: $q, first: 10) {
+             products(query: $q, first: 25) {
                edges {
                  node {
                    variants(first: 25) {
@@ -100,7 +101,7 @@ export const resolveVariantsBySkus = async (
                }
              }
            }`,
-          { q: `sku:${sku}`, ...ctx },
+          { q: sku, ...ctx },
           { buyerAccessToken: ctx.customerAccessToken },
         );
         for (const productEdge of data.products.edges) {
